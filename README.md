@@ -47,6 +47,14 @@ OHDSIAssistant::lintStudyDesign(
 
 You'll see plans, findings, and suggested patches. Advice logs are saved under demo/inst/assistant/.
 
+Executable action (concept-set includeDescendants helper):
+
+```r
+patch <- OHDSIAssistant::proposeIncludeDescendantsPatch("demo/concept_set.json")
+OHDSIAssistant::previewConceptSetPatch("demo/concept_set.json", patch)
+OHDSIAssistant::applyConceptSetPatch("demo/concept_set.json", patch, backup = TRUE)
+```
+
 Next steps
 
 Replace "note" patches with executable JSON Patch aligned to ATLAS schema.

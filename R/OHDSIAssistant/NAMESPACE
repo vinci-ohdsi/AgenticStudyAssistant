@@ -1,2 +1,5 @@
 export(acp_connect)
 export(lintStudyDesign)
+export(proposeIncludeDescendantsPatch)
+export(previewConceptSetPatch)
+export(applyConceptSetPatch)

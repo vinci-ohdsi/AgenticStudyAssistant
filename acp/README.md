@@ -12,3 +12,20 @@
   - `GET /health`
   - `POST /tools/propose_concept_set_diff`
   - `POST /tools/cohort_lint`
+  - `POST /actions/concept_set_edit`
+
+Example action payload (dry-run):
+
+```json
+{
+  "artifactRef": "path-or-url-to-concept-set.json",
+  "ops": [
+    {
+      "op": "set_include_descendants",
+      "where": { "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false },
+      "value": true
+    }
+  ],
+  "write": false
+}
+```

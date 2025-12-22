@@ -16,7 +16,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -35,7 +35,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -54,7 +54,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -73,7 +73,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -92,7 +92,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -111,7 +111,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -130,7 +130,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -149,7 +149,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -168,7 +168,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -187,7 +187,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -206,7 +206,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -225,7 +225,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -244,7 +244,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     },
     {
@@ -263,7 +263,7 @@
         "VALID_END_DATE": "2099-12-30"
       },
       "isExcluded": false,
-      "includeDescendants": false,
+      "includeDescendants": true,
       "includeMapped": false
     }
   ]

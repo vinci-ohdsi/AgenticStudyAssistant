@@ -29,8 +29,12 @@ lintStudyDesign <- function(
     } else {
       local_concept_sets_review(conceptSetRef, studyIntent = paste(readLines(studyProtocol, warn = FALSE), collapse=" "))
     }
+    res$artifact <- conceptSetRef
     if (interactive) {
-      cat("\n== Concept Sets Review ==\n"); cat(res$plan, "\n"); print_findings(res$findings)
+      cat("\n== Concept Sets Review ==\n")
+      cat(sprintf("File: %s\n", conceptSetRef))
+      cat(res$plan, "\n")
+      print_findings(res$findings)
     }
     results$`concept-sets-review` <- res
   }
@@ -41,8 +45,12 @@ lintStudyDesign <- function(
     } else {
       local_cohort_critique_general(cohortRef)
     }
+    res$artifact <- cohortRef
     if (interactive) {
-      cat("\n== Cohort Critique: General Design ==\n"); cat(res$plan, "\n"); print_findings(res$findings)
+      cat("\n== Cohort Critique: General Design ==\n")
+      cat(sprintf("File: %s\n", cohortRef))
+      cat(res$plan, "\n")
+      print_findings(res$findings)
     }
     results$`cohort-critique-general-design` <- res
   }
