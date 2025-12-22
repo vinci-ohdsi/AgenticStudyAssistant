@@ -1,6 +1,7 @@
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -10,12 +11,44 @@ from flask import Flask, jsonify, request
 app = Flask(__name__)
 
 LOG_MODEL = os.getenv("ACP_MODEL_LOG", "1") == "1"
+TIMESTAMP_FMT = "%Y%m%dT%H%M%S"
 
 
 def log_lines(prefix: str, text: str):
     if LOG_MODEL:
         for line in text.splitlines():
             print(f"{prefix}{line}", file=sys.stderr)
+
+
+def format_time():
+    return __import__("datetime").datetime.now().strftime(TIMESTAMP_FMT)
+
+
+def write_json(target: str, obj, backup: bool = True, overwrite: bool = True):
+    if target.startswith("http://") or target.startswith("https://"):
+        raise ValueError("write only supported to local files")
+
+    final_target = target
+    backup_file = None
+
+    if not overwrite and os.path.exists(target):
+        root, ext = os.path.splitext(target)
+        i = 1
+        while True:
+            candidate = f"{root}-assistant-v{i}{ext}"
+            if not os.path.exists(candidate):
+                final_target = candidate
+                break
+            i += 1
+
+    if overwrite and backup and os.path.exists(final_target):
+        backup_file = f"{final_target}.bak_{format_time()}"
+        shutil.copyfile(final_target, backup_file)
+
+    with open(final_target, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+
+    return final_target, backup_file
 
 
 def load_json(ref: str):
@@ -154,6 +187,74 @@ def apply_set_include_descendants(cs, where, value=True):
     return cs, preview
 
 
+@app.post("/actions/execute_llm")
+def execute_llm_actions():
+    """
+    Execute model-proposed actions safely using deterministic ops.
+    Currently supports concept-set actions only.
+    """
+    body = request.get_json(force=True)
+    ref = body.get("artifactRef")
+    actions = body.get("actions", [])
+    write = bool(body.get("write", False))
+    overwrite = bool(body.get("overwrite", False))
+    backup = bool(body.get("backup", True))
+
+    if not isinstance(actions, list):
+        return jsonify({"error": "actions must be a list"}), 400
+
+    raw = load_json(ref)
+    if not isinstance(raw, (dict, list)):
+        return jsonify({"error": "only concept-set actions are supported in this prototype"}), 400
+
+    total_applied = 0
+    preview_changes = []
+    ignored = []
+    cs = raw
+
+    for act in actions:
+        atype = act.get("type") or act.get("op")
+        if atype == "set_include_descendants":
+            where = act.get("where", {}) if isinstance(act, dict) else {}
+            allowed_keys = {"domainId", "conceptClassId", "includeDescendants"}
+            where = {k: v for k, v in where.items() if k in allowed_keys}
+            value = bool(act.get("value", True))
+            before = len(preview_changes)
+            cs, changed = apply_set_include_descendants(cs, where=where, value=value)
+            preview_changes.extend(changed)
+            if len(preview_changes) > before:
+                total_applied += 1
+            else:
+                ignored.append({"type": atype, "reason": "no items matched filter"})
+        else:
+            ignored.append({"type": atype, "reason": "unsupported action type"})
+
+    written_to = None
+    applied = False
+    if write:
+        target = ref
+        try:
+            written_to, backup_file = write_json(target, cs, backup=backup, overwrite=overwrite or False)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        applied = True
+    else:
+        backup_file = None
+
+    return jsonify(
+        {
+            "plan": f"Execute LLM actions ({total_applied} applied, {len(ignored)} ignored).",
+            "preview_changes": preview_changes,
+            "counts": {"applied": total_applied, "changed": len(preview_changes), "ignored": len(ignored)},
+            "ignored": ignored,
+            "artifact": ref,
+            "applied": applied,
+            "written_to": written_to,
+            "backup_file": backup_file,
+        }
+    )
+
+
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
@@ -166,17 +267,21 @@ def propose_concept_set_diff():
     study_intent = body.get("studyIntent", "")
     cs = load_json(ref)
 
-    items = []
-    if isinstance(cs, dict) and "items" in cs:
-        for it in cs.get("items", []):
-            c = it.get("concept") or {}
-            items.append({"conceptId": c.get("conceptId") or c.get("CONCEPT_ID"), "domainId": c.get("domainId") or c.get("DOMAIN_ID")})
-    elif isinstance(cs, list):
-        for it in cs:
-            items.append({"conceptId": it.get("conceptId") or it.get("CONCEPT_ID"), "domainId": it.get("domainId") or it.get("DOMAIN_ID")})
+    canon_items, _src = canonicalize_concept_items(cs)
+    # include includeDescendants and conceptClassId for model visibility
+    items = [
+        {
+            "conceptId": it.get("conceptId"),
+            "domainId": it.get("domainId"),
+            "conceptClassId": it.get("conceptClassId"),
+            "includeDescendants": bool(it.get("includeDescendants") or False),
+        }
+        for it in canon_items
+    ]
 
     findings = []
     patches = []
+    actions = []
     risk_notes = []
     plan = f"Review concept set for gaps and inconsistencies given the study intent: {study_intent[:160]}..."
 
@@ -191,6 +296,31 @@ def propose_concept_set_diff():
     if len(domains) > 1:
         findings.append({"id": "mixed_domains", "severity": "low", "impact": "portability", "message": f"Multiple domains detected: {sorted(domains)}"})
 
+    # deterministic check: drug/ingredient lacking descendants
+    no_desc = [
+        it
+        for it in items
+        if (it.get("domainId") or "").lower() == "drug"
+        and (it.get("conceptClassId") or "").lower() == "ingredient"
+        and not bool(it.get("includeDescendants") or False)
+    ]
+    if no_desc:
+        findings.append(
+            {
+                "id": "suggest_descendants_concept_set",
+                "severity": "medium",
+                "impact": "design",
+                "message": "Drug ingredient concepts missing includeDescendants; consider enabling for coverage.",
+            }
+        )
+        actions.append(
+            {
+                "type": "set_include_descendants",
+                "where": {"domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": False},
+                "value": True,
+            }
+        )
+
     prompt = f"""You are checking an OHDSI concept set for study design issues.
 Study intent: {study_intent}
 First 20 items: {json.dumps(items[:20])}
@@ -204,8 +334,10 @@ Return JSON with fields: findings[], patches[]. Keep patches high-level notes, n
         for p in llm.get("patches", []):
             if p not in patches:
                 patches.append(p)
+        if isinstance(llm.get("actions"), list):
+            actions = llm["actions"]
 
-    return jsonify({"plan": plan, "findings": findings, "patches": patches, "risk_notes": risk_notes})
+    return jsonify({"plan": plan, "findings": findings, "patches": patches, "actions": actions, "risk_notes": risk_notes})
 
 
 @app.post("/tools/cohort_lint")
@@ -215,7 +347,7 @@ def cohort_lint():
     cohort = load_json(ref)
 
     plan = "Review cohort JSON for general design issues (washout/time-at-risk, inverted windows, empty or conflicting criteria)."
-    findings, patches, risk_notes = [], [], []
+    findings, patches, actions, risk_notes = [], [], [], []
 
     pc = cohort.get("PrimaryCriteria", {}) if isinstance(cohort, dict) else {}
     washout = pc.get("ObservationWindow", {})
@@ -244,8 +376,10 @@ Cohort excerpt: {json.dumps({k: cohort.get(k) for k in list(cohort.keys())[:5]})
         for p in llm.get("patches", []):
             if p not in patches:
                 patches.append(p)
+        if isinstance(llm.get("actions"), list):
+            actions = llm["actions"]
 
-    return jsonify({"plan": plan, "findings": findings, "patches": patches, "risk_notes": risk_notes})
+    return jsonify({"plan": plan, "findings": findings, "patches": patches, "actions": actions, "risk_notes": risk_notes})
 
 
 @app.post("/actions/concept_set_edit")
@@ -256,6 +390,7 @@ def concept_set_edit():
     write = bool(body.get("write", False))
     backup = bool(body.get("backup", False))
     output_path = body.get("outputPath")
+    overwrite = bool(body.get("overwrite", True))
 
     cs = load_json(ref)
     all_preview = []
@@ -272,25 +407,23 @@ def concept_set_edit():
     backup_file = None
     if write:
         target = output_path or ref
-        if target.startswith("http://") or target.startswith("https://"):
-            return jsonify({"error": "write only supported to local files"}), 400
-        if backup and os.path.exists(target):
-            ts = format_time()
-            backup_file = f"{target}.bak_{ts}"
-            import shutil
-
-            shutil.copyfile(target, backup_file)
-        with open(target, "w", encoding="utf-8") as f:
-            json.dump(cs, f, indent=2)
-        written_to = target
+        try:
+            written_to, backup_file = write_json(target, cs, backup=backup, overwrite=overwrite)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
         applied = True
 
     plan = "Set includeDescendants=true for Drug/Ingredient entries that lack it."
-    return jsonify({"plan": plan, "preview_changes": all_preview, "applied": applied, "written_to": written_to, "backup_file": backup_file, "ops": ops})
-
-
-def format_time():
-    return __import__("datetime").datetime.now().strftime("%Y%m%dT%H%M%S")
+    return jsonify(
+        {
+            "plan": plan,
+            "preview_changes": all_preview,
+            "applied": applied,
+            "written_to": written_to,
+            "backup_file": backup_file,
+            "ops": ops,
+        }
+    )
 
 
 if __name__ == "__main__":

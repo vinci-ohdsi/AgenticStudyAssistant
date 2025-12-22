@@ -13,6 +13,7 @@
   - `POST /tools/propose_concept_set_diff`
   - `POST /tools/cohort_lint`
   - `POST /actions/concept_set_edit`
+  - `POST /actions/execute_llm` (executes LLM-proposed actions for concept sets)
 
 Example action payload (dry-run):
 

@@ -57,7 +57,7 @@ Return a single JSON object with exactly these top-level keys:
 }
 ```
 
-### Patch (advisory only; NOT executable edits)
+### Patch (advisory only - see below for actions)
 
 Use JSON Patch with `op: "note"` only to explain suggested changes.
 ```json

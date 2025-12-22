@@ -55,6 +55,16 @@ OHDSIAssistant::previewConceptSetPatch("demo/concept_set.json", patch)
 OHDSIAssistant::applyConceptSetPatch("demo/concept_set.json", patch, backup = TRUE)
 ```
 
+LLM actions (preview/apply model-proposed edits):
+
+```r
+resp <- OHDSIAssistant:::`.acp_post`("/tools/propose_concept_set_diff", list(
+  conceptSetRef = "demo/concept_set.json",
+  studyIntent   = paste(readLines("demo/protocol.md", warn = FALSE), collapse = " ")
+))
+OHDSIAssistant::applyLLMActionsConceptSet("demo/concept_set.json", resp$actions, preview = TRUE)
+```
+
 Next steps
 
 Replace "note" patches with executable JSON Patch aligned to ATLAS schema.
