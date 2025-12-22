@@ -1,0 +1,11 @@
+*pyc
+*~
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.Rbuildignore
+.Rproj
+.DS_Store
+**/inst/assistant/*.json
+__pycache__/
