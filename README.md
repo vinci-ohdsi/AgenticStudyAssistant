@@ -7,6 +7,21 @@ This repo contains:
 - An **R package** `OHDSIAssistant` with `lintStudyDesign()` that calls the bridge (or uses a local fallback).
 - A **demo** study in `demo/`.
 
+Currently, this is a minimalistic demo
+- basic concept set and cohort definition checks
+
+Ideas for further implementation
+- suggestions for use of specific OHDSI phenotypes within a study
+- flagged issues with the source data wrt to the concept sets and/or cohort definitions based on data from DQD and Achilles
+- adapatations of cohort definitions using OHDSI phenotypes for the specific study use case
+- a review of study artifacts (cohort definitions and concept set) from a causal inference and identification theory perspective
+- add AI generated doc comments to cohort definition,
+- generate R code or Atlas/WebAPI custom features from Atlas cohorts,
+- generate R code SQL-based custom features,
+- explain and address Circe-Be checks within R or Atlas/WebAPI
+- manage configuration within Atlas/WebAPI such as security reviews, and clean up of concept sets and cohort definitions
+
+
 ## Quick start
 
 1) Start bridge:

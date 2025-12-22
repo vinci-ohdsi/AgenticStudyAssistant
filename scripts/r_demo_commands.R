@@ -3,6 +3,7 @@
 
 devtools::load_all("R/OHDSIAssistant")  # or build & install
 OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
+
 res <- OHDSIAssistant::lintStudyDesign(
   studyProtocol = "demo/protocol.md",
   studyPackage  = "demo",
@@ -11,3 +12,7 @@ res <- OHDSIAssistant::lintStudyDesign(
   interactive   = TRUE
 )
 str(res, max.level = 2)
+
+patch <- OHDSIAssistant::proposeIncludeDescendantsPatch("demo/concept_set.json")
+OHDSIAssistant::previewConceptSetPatch("demo/concept_set.json", patch)
+OHDSIAssistant::applyConceptSetPatch("demo/concept_set.json", patch, backup = TRUE)
