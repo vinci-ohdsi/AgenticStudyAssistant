@@ -12,7 +12,11 @@ lintStudyDesign <- function(
   lintTasks = c("concept-sets-review","cohort-critique-general-design"),
   apply = FALSE,
   interactive = TRUE,
-  streamThoughts = TRUE
+  streamThoughts = TRUE,
+  handleActions = FALSE,
+  applyActions = FALSE,
+  overwriteActions = FALSE,
+  backupActions = TRUE
 ) {
   conceptSetRef <- file.path(studyPackage, "concept_set.json")
   cohortRef     <- file.path(studyPackage, "cohort_definition.json")
@@ -30,11 +34,33 @@ lintStudyDesign <- function(
       local_concept_sets_review(conceptSetRef, studyIntent = paste(readLines(studyProtocol, warn = FALSE), collapse=" "))
     }
     res$artifact <- conceptSetRef
+    # optional actions handling
+    if (handleActions && use_acp && length(res$actions %||% list())) {
+      prev <- applyLLMActionsConceptSet(conceptSetRef, res$actions, preview = TRUE)
+      res$action_preview <- prev
+      if (applyActions) {
+        res$action_apply <- applyLLMActionsConceptSet(
+          conceptSetRef,
+          res$actions,
+          preview = FALSE,
+          overwrite = overwriteActions,
+          backup = backupActions
+        )
+      }
+    }
     if (interactive) {
       cat("\n== Concept Sets Review ==\n")
       cat(sprintf("File: %s\n", conceptSetRef))
       cat(res$plan, "\n")
       print_findings(res$findings)
+      if (handleActions && !is.null(res$action_preview)) {
+        cat(sprintf("Action preview: %s changes, %s ignored\n",
+                    res$action_preview$counts$changed %||% 0,
+                    res$action_preview$counts$ignored %||% 0))
+      }
+      if (applyActions && !is.null(res$action_apply) && isTRUE(res$action_apply$applied)) {
+        cat(sprintf("Actions applied. Written to: %s\n", res$action_apply$written_to %||% conceptSetRef))
+      }
     }
     results$`concept-sets-review` <- res
   }
