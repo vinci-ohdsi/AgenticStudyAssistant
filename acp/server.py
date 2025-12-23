@@ -14,6 +14,9 @@ app = Flask(__name__)
 LOG_MODEL = os.getenv("ACP_MODEL_LOG", "1") == "1"
 TIMESTAMP_FMT = "%Y%m%dT%H%M%S"
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROMPT_DIR = os.getenv("ACP_PROMPT_DIR", os.path.join(ROOT_DIR, "acp", "prompts"))
+
 
 def log_lines(prefix: str, text: str):
     if LOG_MODEL:
@@ -50,6 +53,70 @@ def write_json(target: str, obj, backup: bool = True, overwrite: bool = True):
         json.dump(obj, f, indent=2)
 
     return final_target, backup_file
+
+
+_PROMPT_CACHE = {}
+
+
+def load_prompt_file(name: str):
+    if name in _PROMPT_CACHE:
+        return _PROMPT_CACHE[name]
+    path = os.path.join(PROMPT_DIR, name)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            txt = f.read().strip()
+            _PROMPT_CACHE[name] = txt
+            return txt
+    except Exception:
+        return ""
+
+
+TOOL_PROMPTS = {
+    "concept-sets-review": {
+        "overview": ["overview_lint.md"],
+        "spec": ["spec_concept_sets_review.md"],
+    },
+    "cohort-critique-general-design": {
+        "overview": ["overview_lint.md"],
+        "spec": ["spec_cohort_critique.md"],
+    },
+    "phenotype_recommendations": {
+        "overview": ["overview_phenotype.md"],
+        "spec": ["spec_phenotype_recommendations.md"],
+    },
+    "phenotype_improvements": {
+        "overview": ["overview_phenotype.md"],
+        "spec": ["spec_phenotype_improvements.md"],
+    },
+}
+
+
+def build_llm_prompt(tool: str, user_prompt: str):
+    prompt_cfg = TOOL_PROMPTS.get(tool, {})
+    overview_files = prompt_cfg.get("overview", [])
+    spec_files = prompt_cfg.get("spec", [])
+
+    overview = [load_prompt_file(f) for f in overview_files if load_prompt_file(f)]
+    specs = [load_prompt_file(f) for f in spec_files if load_prompt_file(f)]
+
+    strict_rules = "\n\n".join(
+        ["STRICT OUTPUT RULES:"]
+        + specs
+        + [
+            "- Return exactly ONE JSON object.",
+            "- Do NOT wrap output in markdown, code fences, or prose.",
+            "- If uncertain, return required keys with empty arrays/strings.",
+            "- Respect schema constraints and allowed IDs.",
+        ]
+    )
+
+    sections = []
+    if overview:
+        sections.append("\n\n".join(overview))
+    sections.append("Below is dynamic content to analyze. Do not act until after STRICT OUTPUT RULES.")
+    sections.append("USER REQUEST:\n" + user_prompt)
+    sections.append(strict_rules)
+    return "\n\n".join(sections)
 
 
 def resolve_local_path(ref: str):
@@ -138,28 +205,6 @@ def _filter_catalog_recs(recs, catalog_rows, max_results):
         if len(cleaned) >= max_results:
             break
     return cleaned
-
-
-def _coerce_rec_ids_from_llm(raw):
-    """Best-effort parse of simple list/CSV ids returned by a non-compliant LLM."""
-    ids = []
-    if isinstance(raw, list):
-        for v in raw:
-            try:
-                ids.append(int(v))
-            except Exception:
-                continue
-    elif isinstance(raw, str):
-        parts = raw.replace("\n", ",").split(",")
-        for p in parts:
-            p = p.strip()
-            if not p:
-                continue
-            try:
-                ids.append(int(p))
-            except Exception:
-                continue
-    return ids
 
 
 def _cohort_id_from_ref(ref: str):
@@ -443,12 +488,10 @@ def propose_concept_set_diff():
             }
         )
 
-    prompt = f"""You are checking an OHDSI concept set for study design issues.
+    user_prompt = f"""Tool: concept-sets-review
 Study intent: {study_intent}
-First 20 items: {json.dumps(items[:20])}
-Return JSON with fields: findings[], patches[]. Return both high-level notes and any relevant action patches.
-"""
-    llm = maybe_call_model(prompt)
+First 20 items: {json.dumps(items[:20])}"""
+    llm = maybe_call_model(build_llm_prompt("concept-sets-review", user_prompt))
     if llm:
         for f in llm.get("findings", []):
             if f not in findings:
@@ -486,11 +529,9 @@ def cohort_lint():
         if w and isinstance(start, (int, float)) and isinstance(end, (int, float)) and start > end:
             findings.append({"id": f"inverted_window_{i}", "severity": "high", "impact": "validity", "message": f"InclusionRule[{i}] has inverted window (start > end)."})
 
-    prompt = f"""You are reviewing an OHDSI cohort JSON for general design risks.
-Return JSON fields findings[], patches[] (return all relevant information and action patches).
-Cohort excerpt: {json.dumps({k: cohort.get(k) for k in list(cohort.keys())[:5]})}
-"""
-    llm = maybe_call_model(prompt)
+    prompt_body = f"""Tool: cohort-critique-general-design
+Cohort excerpt: {json.dumps({k: cohort.get(k) for k in list(cohort.keys())[:5]})}"""
+    llm = maybe_call_model(build_llm_prompt("cohort-critique-general-design", prompt_body))
     if llm:
         for f in llm.get("findings", []):
             if f not in findings:
@@ -564,26 +605,18 @@ def phenotype_recommendations():
     plan = "Suggest relevant phenotypes from catalog for the study intent (stub if no LLM)."
     recs = []
 
-    prompt = f"""You are selecting OHDSI phenotypes for a study (phenotype_recommendations). Return ONLY JSON with keys: plan, phenotype_recommendations[] according to the instructions you were given in the system prompt.
-Constraints:
-- Choose up to {max_results} items.
-- Only choose cohortId values from this allowed list: {[r['cohortId'] for r in catalog_rows]}
+    user_prompt = f"""Tool: phenotype_recommendations
+maxResults: {max_results}
+Allowed cohortIds: {[r['cohortId'] for r in catalog_rows]}
 Study intent (truncated): {protocol_text[:2000]}
-Catalog preview (id, name, logicDescription, first 200 rows max): {json.dumps(catalog_rows[:200])}
-Constraints:
-    - JSON ONLY. No prose or markdown in the response!!
-"""
-    llm = maybe_call_model(prompt)
+Catalog preview (first 200 rows): {json.dumps(catalog_rows[:200])}"""
+
+    llm = maybe_call_model(build_llm_prompt("phenotype_recommendations", user_prompt))
     mode = "llm"
     if llm and isinstance(llm.get("phenotype_recommendations"), list):
         recs = _filter_catalog_recs(llm.get("phenotype_recommendations"), catalog_rows, max_results)
         if llm.get("plan"):
             plan = llm["plan"]
-    elif llm and llm.get("phenotype_recommendations") is None:
-        ids = _coerce_rec_ids_from_llm(llm)
-        if ids:
-            # treat the whole object as an id list if parseable
-            recs = _filter_catalog_recs([{"cohortId": cid} for cid in ids], catalog_rows, max_results)
     else:
         mode = "stub"
         for row in catalog_rows[:max_results]:
@@ -634,22 +667,13 @@ def phenotype_improvements():
     allowed_ids = sorted(list(set(allowed_ids)))
 
     plan = "Review selected phenotypes for improvements against study intent (stub if no LLM)."
-    prompt = f"""You are reviewing OHDSI phenotype definitions against a study intent.
-Return ONLY JSON with keys: plan, phenotype_improvements[], code_suggestion (optional).
-phenotype_improvements item schema: {{
-  "targetCohortId": <int from provided list>,
-  "summary": "<=220 chars>",
-  "actions": [{{"type":"note","path":"<string>","value":"<string>"}}]  # advisory only
-}}
-code_suggestion (optional): {{"language":"R","summary":"<string>","snippet":"<code>"}}.
-Constraints:
-- Use only cohortIds from: {allowed_ids or '[ids provided in inputs]'}
-- JSON ONLY. No prose or markdown in the response!!
+    user_prompt = f"""Tool: phenotype_improvements
+Allowed cohortIds: {allowed_ids or '[ids provided in inputs]'}
 Study intent (truncated): {protocol_text[:2000]}
 Phenotype names: {json.dumps([{'ref': c['ref'], 'name': c['cohort'].get('name') or c['cohort'].get('Name')} for c in cohorts])}
-Characterization summaries (optional paths): {characterization_refs}
-"""
-    llm = maybe_call_model(prompt)
+Characterization summaries (optional paths): {characterization_refs}"""
+
+    llm = maybe_call_model(build_llm_prompt("phenotype_improvements", user_prompt))
     mode = "llm"
     improvements = []
     code_suggestion = None
