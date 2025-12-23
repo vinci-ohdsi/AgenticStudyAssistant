@@ -1,7 +1,6 @@
 # Demo: apply LLM-proposed actions vs deterministic patch helper
 
 ## NOTE: running from a directory above the AgenticStudyAssistant so that we can reuse the .renv
-
 devtools::load_all("AgenticStudyAssistant/R/OHDSIAssistant")
 OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
 

@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import shlex
@@ -51,13 +52,134 @@ def write_json(target: str, obj, backup: bool = True, overwrite: bool = True):
     return final_target, backup_file
 
 
+def resolve_local_path(ref: str):
+    """Resolve a local path robustly relative to server cwd or its parent."""
+    if os.path.isabs(ref):
+        return ref
+    # try as-is relative to cwd
+    cand = os.path.abspath(ref)
+    if os.path.exists(cand):
+        return cand
+    cwd = os.getcwd()
+    # try relative to cwd parent (helps when client includes repo folder name)
+    parent_cand = os.path.abspath(os.path.join(cwd, "..", ref))
+    if os.path.exists(parent_cand):
+        return parent_cand
+    # try stripping leading cwd basename (e.g., "AgenticStudyAssistant/demo/...")
+    base = os.path.basename(cwd)
+    prefix = base + os.sep
+    if ref.startswith(prefix):
+        trimmed = ref[len(prefix) :]
+        trimmed_cand = os.path.abspath(os.path.join(cwd, trimmed))
+        if os.path.exists(trimmed_cand):
+            return trimmed_cand
+    return cand
+
+
 def load_json(ref: str):
     if ref.startswith("http://") or ref.startswith("https://"):
         r = requests.get(ref, timeout=30)
         r.raise_for_status()
         return r.json()
-    with open(ref, "r", encoding="utf-8") as f:
+    path = resolve_local_path(ref)
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_text(ref: str):
+    if ref.startswith("http://") or ref.startswith("https://"):
+        r = requests.get(ref, timeout=30)
+        r.raise_for_status()
+        return r.text
+    path = resolve_local_path(ref)
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def load_cohort_catalog_csv(ref: str):
+    rows = []
+    if ref.startswith("http://") or ref.startswith("https://"):
+        r = requests.get(ref, timeout=30)
+        r.raise_for_status()
+        content = r.text.splitlines()
+    else:
+        path = resolve_local_path(ref)
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.readlines()
+    reader = csv.DictReader(content)
+    for row in reader:
+        rows.append(
+            {
+                "cohortId": int(row.get("cohortId") or 0),
+                "cohortName": row.get("cohortNameLong") or row.get("cohortName") or row.get("name") or "",
+                "logicDescription": row.get("logicDescription") or "",
+            }
+        )
+    return rows
+
+
+def _filter_catalog_recs(recs, catalog_rows, max_results):
+    """Keep only catalog-backed cohortIds; fill missing names."""
+    allowed = {r["cohortId"]: r for r in catalog_rows if r.get("cohortId")}
+    cleaned = []
+    for rec in recs or []:
+        cid = rec.get("cohortId")
+        if cid not in allowed:
+            continue
+        info = allowed[cid]
+        cleaned.append(
+            {
+                "cohortId": cid,
+                "cohortName": rec.get("cohortName") or info.get("cohortName") or "",
+                "justification": rec.get("justification") or "Model justification not provided.",
+                "confidence": rec.get("confidence"),
+            }
+        )
+        if len(cleaned) >= max_results:
+            break
+    return cleaned
+
+
+def _coerce_rec_ids_from_llm(raw):
+    """Best-effort parse of simple list/CSV ids returned by a non-compliant LLM."""
+    ids = []
+    if isinstance(raw, list):
+        for v in raw:
+            try:
+                ids.append(int(v))
+            except Exception:
+                continue
+    elif isinstance(raw, str):
+        parts = raw.replace("\n", ",").split(",")
+        for p in parts:
+            p = p.strip()
+            if not p:
+                continue
+            try:
+                ids.append(int(p))
+            except Exception:
+                continue
+    return ids
+
+
+def _cohort_id_from_ref(ref: str):
+    """Best-effort extraction of cohortId from filename (e.g., 33_name.json)."""
+    base = os.path.basename(ref or "")
+    if not base:
+        return None
+    digits = []
+    for ch in base:
+        if ch.isdigit():
+            digits.append(ch)
+        else:
+            if digits:
+                break
+    if digits:
+        try:
+            return int("".join(digits))
+        except ValueError:
+            return None
+    return None
 
 
 def _run_cli_model(cmd: str, prompt: str, label: str):
@@ -324,7 +446,7 @@ def propose_concept_set_diff():
     prompt = f"""You are checking an OHDSI concept set for study design issues.
 Study intent: {study_intent}
 First 20 items: {json.dumps(items[:20])}
-Return JSON with fields: findings[], patches[]. Keep patches high-level notes, not executable.
+Return JSON with fields: findings[], patches[]. Return both high-level notes and any relevant action patches.
 """
     llm = maybe_call_model(prompt)
     if llm:
@@ -365,7 +487,7 @@ def cohort_lint():
             findings.append({"id": f"inverted_window_{i}", "severity": "high", "impact": "validity", "message": f"InclusionRule[{i}] has inverted window (start > end)."})
 
     prompt = f"""You are reviewing an OHDSI cohort JSON for general design risks.
-Return JSON fields findings[], patches[] (patches are notes, not executable).
+Return JSON fields findings[], patches[] (return all relevant information and action patches).
 Cohort excerpt: {json.dumps({k: cohort.get(k) for k in list(cohort.keys())[:5]})}
 """
     llm = maybe_call_model(prompt)
@@ -422,6 +544,135 @@ def concept_set_edit():
             "written_to": written_to,
             "backup_file": backup_file,
             "ops": ops,
+        }
+    )
+
+
+@app.post("/tools/phenotype_recommendations")
+def phenotype_recommendations():
+    body = request.get_json(force=True)
+    protocol_ref = body.get("protocolRef")
+    catalog_ref = body.get("cohortsCatalogRef")
+    max_results = int(body.get("maxResults") or 5)
+
+    if not protocol_ref or not catalog_ref:
+        return jsonify({"error": "protocolRef and cohortsCatalogRef are required"}), 400
+
+    protocol_text = load_text(protocol_ref)
+    catalog_rows = load_cohort_catalog_csv(catalog_ref)
+
+    plan = "Suggest relevant phenotypes from catalog for the study intent (stub if no LLM)."
+    recs = []
+
+    prompt = f"""You are selecting OHDSI phenotypes for a study (phenotype_recommendations). Return ONLY JSON with keys: plan, phenotype_recommendations[] according to the instructions you were given in the system prompt.
+Constraints:
+- Choose up to {max_results} items.
+- Only choose cohortId values from this allowed list: {[r['cohortId'] for r in catalog_rows]}
+Study intent (truncated): {protocol_text[:2000]}
+Catalog preview (id, name, logicDescription, first 200 rows max): {json.dumps(catalog_rows[:200])}
+Constraints:
+    - JSON ONLY. No prose or markdown in the response!!
+"""
+    llm = maybe_call_model(prompt)
+    mode = "llm"
+    if llm and isinstance(llm.get("phenotype_recommendations"), list):
+        recs = _filter_catalog_recs(llm.get("phenotype_recommendations"), catalog_rows, max_results)
+        if llm.get("plan"):
+            plan = llm["plan"]
+    elif llm and llm.get("phenotype_recommendations") is None:
+        ids = _coerce_rec_ids_from_llm(llm)
+        if ids:
+            # treat the whole object as an id list if parseable
+            recs = _filter_catalog_recs([{"cohortId": cid} for cid in ids], catalog_rows, max_results)
+    else:
+        mode = "stub"
+        for row in catalog_rows[:max_results]:
+            recs.append(
+                {
+                    "cohortId": row.get("cohortId"),
+                    "cohortName": row.get("cohortName"),
+                    "justification": "Stub recommendation from deterministic fallback (no LLM).",
+                    "confidence": None,
+                }
+            )
+
+    return jsonify(
+        {
+            "plan": plan,
+            "phenotype_recommendations": recs,
+            "mode": mode,
+            "artifact": {"protocolRef": protocol_ref, "cohortsCatalogRef": catalog_ref},
+        }
+    )
+
+
+@app.post("/tools/phenotype_improvements")
+def phenotype_improvements():
+    body = request.get_json(force=True)
+    protocol_ref = body.get("protocolRef")
+    cohort_refs = body.get("cohortRefs") or []
+    characterization_refs = body.get("characterizationRefs") or []
+
+    if not protocol_ref or not isinstance(cohort_refs, list) or len(cohort_refs) == 0:
+        return jsonify({"error": "protocolRef and cohortRefs[] are required"}), 400
+
+    protocol_text = load_text(protocol_ref)
+    cohorts = []
+    for ref in cohort_refs:
+        try:
+            cohorts.append({"ref": ref, "cohort": load_json(ref)})
+        except Exception as e:
+            return jsonify({"error": f"failed to load cohort {ref}: {e}"}), 400
+
+    allowed_ids = []
+    for c in cohorts:
+        cid = c["cohort"].get("id") if isinstance(c.get("cohort"), dict) else None
+        if cid is None:
+            cid = _cohort_id_from_ref(c.get("ref"))
+        if isinstance(cid, (int, float)):
+            allowed_ids.append(int(cid))
+    allowed_ids = sorted(list(set(allowed_ids)))
+
+    plan = "Review selected phenotypes for improvements against study intent (stub if no LLM)."
+    prompt = f"""You are reviewing OHDSI phenotype definitions against a study intent.
+Return ONLY JSON with keys: plan, phenotype_improvements[], code_suggestion (optional).
+phenotype_improvements item schema: {{
+  "targetCohortId": <int from provided list>,
+  "summary": "<=220 chars>",
+  "actions": [{{"type":"note","path":"<string>","value":"<string>"}}]  # advisory only
+}}
+code_suggestion (optional): {{"language":"R","summary":"<string>","snippet":"<code>"}}.
+Constraints:
+- Use only cohortIds from: {allowed_ids or '[ids provided in inputs]'}
+- JSON ONLY. No prose or markdown in the response!!
+Study intent (truncated): {protocol_text[:2000]}
+Phenotype names: {json.dumps([{'ref': c['ref'], 'name': c['cohort'].get('name') or c['cohort'].get('Name')} for c in cohorts])}
+Characterization summaries (optional paths): {characterization_refs}
+"""
+    llm = maybe_call_model(prompt)
+    mode = "llm"
+    improvements = []
+    code_suggestion = None
+    if llm:
+        raw_improvements = llm.get("phenotype_improvements") or []
+        if allowed_ids:
+            improvements = [imp for imp in raw_improvements if imp.get("targetCohortId") in allowed_ids]
+        else:
+            improvements = raw_improvements
+        code_suggestion = llm.get("code_suggestion")
+        if llm.get("plan"):
+            plan = llm["plan"]
+    else:
+        mode = "stub"
+        improvements = []
+
+    return jsonify(
+        {
+            "plan": plan,
+            "phenotype_improvements": improvements,
+            "code_suggestion": code_suggestion,
+            "mode": mode,
+            "artifact": {"protocolRef": protocol_ref, "cohortRefs": cohort_refs, "characterizationRefs": characterization_refs},
         }
     )
 
