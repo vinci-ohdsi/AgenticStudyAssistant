@@ -1,5 +1,7 @@
 ### How to config Open-webui for this low-fi prototype
 
+(see the README.md for how to set the environment variables to use the open-webui API)
+
 1) obtain Gemma3 12b in the models library
 
 2) set up a workspace `AgentStudyAssistant`

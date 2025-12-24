@@ -27,6 +27,16 @@ proposeIncludeDescendantsPatch <- function(conceptSetRef) {
 #' @param conceptSetRef path or URL
 #' @param patch patch object from proposeIncludeDescendantsPatch
 previewConceptSetPatch <- function(conceptSetRef, patch) {
+  if (!is.null(patch$actions)) {
+    prev <- applyLLMActionsConceptSet(conceptSetRef, patch$actions, preview = TRUE)
+    cat(prev$plan %||% "LLM actions preview", "\n")
+    if (length(prev$preview_changes) == 0) {
+      cat("No matching items found.\n"); return(invisible(prev))
+    }
+    df <- do.call(rbind, lapply(prev$preview_changes, as.data.frame))
+    print(df)
+    return(invisible(prev))
+  }
   if (is.null(patch$preview_changes)) {
     cat("No preview available.\n"); return(invisible(NULL))
   }
@@ -44,7 +54,20 @@ previewConceptSetPatch <- function(conceptSetRef, patch) {
 #' @param patch patch object
 #' @param backup logical; if TRUE, create .bak before overwrite
 #' @param outputPath optional output path
-applyConceptSetPatch <- function(conceptSetRef, patch, backup = TRUE, outputPath = NULL) {
+applyConceptSetPatch <- function(conceptSetRef, patch, backup = TRUE, outputPath = NULL, useActions = NULL, overwrite = TRUE) {
+  # Choose mode: actions vs deterministic ops
+  if (is.null(useActions)) useActions <- !is.null(patch$actions)
+  if (isTRUE(useActions)) {
+    res <- applyLLMActionsConceptSet(
+      conceptSetRef,
+      patch$actions %||% list(),
+      preview = FALSE,
+      overwrite = overwrite,
+      backup = backup
+    )
+    return(invisible(res))
+  }
+
   patch$write <- TRUE
   patch$artifactRef <- conceptSetRef
   patch$backup <- backup

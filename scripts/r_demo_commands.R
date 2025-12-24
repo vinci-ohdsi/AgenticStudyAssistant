@@ -1,7 +1,7 @@
 # Run after starting the ACP bridge:
 # source("scripts/r_demo_commands.R")
 
-devtools::load_all("R/OHDSIAssistant")  # or build & install
+devtools::load_all("./AgenticStudyAssistant/R/OHDSIAssistant")  # or build & install
 OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
 
 res <- OHDSIAssistant::lintStudyDesign(

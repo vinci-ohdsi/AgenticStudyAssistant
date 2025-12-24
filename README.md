@@ -43,6 +43,7 @@ Optional) Use OpenWebUI HTTP backend (recommended):
 export OPENWEBUI_API_KEY="..."  # required
 export OPENWEBUI_API_URL="http://localhost:3000/api/chat/completions"  # default
 export OPENWEBUI_MODEL="agentstudyassistant"  # default
+export FLASK_DEBUG=1 # Optional but helpful
 ./scripts/start_acp.sh
 ```
 
@@ -68,6 +69,17 @@ Executable action (concept-set includeDescendants helper):
 patch <- OHDSIAssistant::proposeIncludeDescendantsPatch("demo/concept_set.json")
 OHDSIAssistant::previewConceptSetPatch("demo/concept_set.json", patch)
 OHDSIAssistant::applyConceptSetPatch("demo/concept_set.json", patch, backup = TRUE)
+```
+
+Phenotype suggestions (stubbed if no LLM):
+
+```r
+devtools::load_all("R/OHDSIAssistant")
+OHDSIAssistant::acp_connect("http://127.0.0.1:7777")  # optional; falls back to stub
+rec <- OHDSIAssistant::suggestPhenotypes("demo/protocol.md", "demo/Cohorts.csv", maxResults = 3)
+ids <- OHDSIAssistant::selectPhenotypeRecommendations(rec$phenotype_recommendations, interactive = TRUE)
+paths <- OHDSIAssistant::pullPhenotypeDefinitions(ids, outputDir = "demo")
+OHDSIAssistant::reviewPhenotypes("demo/protocol.md", paths)
 ```
 
 LLM actions (preview/apply model-proposed edits):
