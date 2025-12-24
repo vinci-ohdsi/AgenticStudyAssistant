@@ -1,0 +1,16 @@
+
+### Set up
+
+Here are the steps needed to rerun the demonstration using Atlas Web API.
+
+- SSH tunnerthe port 5432 Postgres database on Triads-dl is tunneled to localhost 
+
+- WebAPI has to be running. In order to do that you have to make sure that you set Java 8 as the environment. You have to run the maven command that does the spring boot. `mvn  spring-boot:run -Dmaven.test.skip=true -P webapi-postgresql -s WebAPIConfig/settings.xml -f pom.xml`
+
+- run a Python HTTP server in the Atlas folder - Atlas is configured to talk to the Web API on my laptop when it's running on localhost
+
+- the APC service has to be running and accessible. Now because I'm developing the ACP service in a containerized environment, you have to forward the port 7777 from the containerized environment onto the laptop local host.
+
+### Demonstration:
+
+- See [this video](https://pitt.hosted.panopto.com/Panopto/Pages/Viewer.aspx?id=70502f91-3594-4cb6-b776-b3bd012cf637)
