@@ -1,3 +1,6 @@
+*.agent-shell/
+*sandbox/
+scripts/output-cohort-diagn/
 *db-details.json
 *pyc
 *~

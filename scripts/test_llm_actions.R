@@ -1,18 +1,29 @@
-# Demo: apply LLM-proposed actions vs deterministic patch helper
+### Demo: apply LLM-proposed actions for the tools we are prototyping:
+## - Lint tools
+## -- `concept-sets-review`
+## -- `cohort-critique-general-design`
+
+## - Study artifact selection/improvement
+## -- `phenotype_recommendations`
+## -- `phenotype_improvements`
 
 ## NOTE: running from a directory above the AgenticStudyAssistant so that we can reuse the .renv
+
+# Import the R thin api to the ACP server/bridge
 devtools::load_all("AgenticStudyAssistant/R/OHDSIAssistant")
+
+# confirm the ACP server/bridge is running
 OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
 
+## Test: -- `concept-sets-review`
+# this concept set has no descendant concepts specified
 concept_set_ref <- "demo/concept_set.json"  # This path is relative to the ACP server's base folder
-
-# --- LLM actions path ---
+                                        
 # Ask tool for findings and actions
 resp <- OHDSIAssistant:::`.acp_post`("/tools/propose_concept_set_diff", list(
   conceptSetRef = concept_set_ref,
   studyIntent   = paste(readLines("./AgenticStudyAssistant/demo/protocol.md", warn = FALSE), collapse = " ") # this path is relative the start of the R session
 ))
-
 actions <- resp$actions
 cat("LLM actions:\n"); print(actions)
 
@@ -21,11 +32,29 @@ prev <- OHDSIAssistant::applyLLMActionsConceptSet(concept_set_ref, actions, prev
 cat("LLM preview counts:\n"); print(prev$counts)
 cat("Preview rows (first few):\n"); print(head(prev$preview_changes))
 
-# Apply (writes new file if overwrite = FALSE)
+## Apply (writes new file if overwrite = FALSE) Note: this is an
+## overite fix and so you will need to replace the concept_set.json
+## with concept_set.json-no-descendants to rerun this test
 applied <- OHDSIAssistant::applyLLMActionsConceptSet(concept_set_ref, actions, preview = FALSE, overwrite = FALSE, backup = TRUE)
 cat("LLM applied written_to:\n"); print(applied$written_to)
 
-# --- Deterministic helper path ---
-patch <- OHDSIAssistant::proposeIncludeDescendantsPatch(concept_set_ref)
-OHDSIAssistant::previewConceptSetPatch(concept_set_ref, patch)
-OHDSIAssistant::applyConceptSetPatch(concept_set_ref, patch, backup = TRUE, overwrite = FALSE)
+############################################################
+
+## -- `phenotype_recommendations`
+protocol <- "AgenticStudyAssistant/demo/protocol.md"
+catalog  <- "AgenticStudyAssistant/demo/Cohorts.csv"
+study_dir <- "AgenticStudyAssistant/demo"
+
+rec <- OHDSIAssistant::suggestPhenotypes(protocol, catalog, maxResults = 10, interactive = TRUE)
+
+ids <- OHDSIAssistant::selectPhenotypeRecommendations(rec$phenotype_recommendations, select = NULL, interactive = interactive())
+if (length(ids)) {
+  paths <- OHDSIAssistant::pullPhenotypeDefinitions(ids, outputDir = study_dir, overwrite = FALSE)
+  OHDSIAssistant::reviewPhenotypes(protocol, paths, interactive = TRUE)
+  # To persist improvement notes next to the cohort JSONs, set apply=TRUE:
+  # OHDSIAssistant::reviewPhenotypes(protocol, paths, interactive = TRUE, apply = TRUE, select = "all")
+} else {
+  cat("No phenotype recommendations returned (likely stub mode).\n")
+}
+
+## -- `phenotype_improvements`

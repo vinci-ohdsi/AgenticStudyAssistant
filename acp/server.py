@@ -16,6 +16,11 @@ TIMESTAMP_FMT = "%Y%m%dT%H%M%S"
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PROMPT_DIR = os.getenv("ACP_PROMPT_DIR", os.path.join(ROOT_DIR, "acp", "prompts"))
+CATALOG_PREVIEW_LIMIT = int(os.getenv("ACP_CATALOG_PREVIEW_LIMIT", "200"))
+CATALOG_ALLOWED_PREVIEW_LIMIT = int(os.getenv("ACP_CATALOG_ALLOWED_PREVIEW_LIMIT", "400"))
+COHORT_SNIPPET_LIMIT = int(os.getenv("ACP_PHENOTYPE_COHORT_SNIPPET", "1800"))
+CHAR_PREVIEW_LIMIT = int(os.getenv("ACP_CHAR_PREVIEW_CHARS", "1200"))
+CHAR_PREVIEW_MAX_FILES = int(os.getenv("ACP_CHAR_PREVIEW_MAX_FILES", "2"))
 
 
 def log_lines(prefix: str, text: str):
@@ -183,6 +188,92 @@ def load_cohort_catalog_csv(ref: str):
             }
         )
     return rows
+
+
+def _truncate_text(txt: str, limit: int):
+    if not isinstance(txt, str):
+        return ""
+    if limit and len(txt) > limit:
+        return txt[:limit] + f"... [truncated {len(txt) - limit} chars]"
+    return txt
+
+
+def _summarize_cohort_for_prompt(cohort_obj, ref: str, snippet_limit: int = COHORT_SNIPPET_LIMIT):
+    """Create a compact cohort summary for prompting without leaking full JSON."""
+    cohort = cohort_obj or {}
+    cid = cohort.get("id") if isinstance(cohort, dict) else None
+    if cid is None:
+        cid = _cohort_id_from_ref(ref)
+    name = cohort.get("name") or cohort.get("Name") or ""
+    desc = _truncate_text(cohort.get("description") or cohort.get("Description") or "", 240)
+
+    pc = cohort.get("PrimaryCriteria") if isinstance(cohort, dict) else {}
+    washout = pc.get("ObservationWindow") if isinstance(pc, dict) else {}
+    inc_rules = cohort.get("InclusionRules") if isinstance(cohort, dict) else []
+    inc_names = []
+    if isinstance(inc_rules, list):
+        for i, rule in enumerate(inc_rules[:3]):
+            nm = ""
+            if isinstance(rule, dict):
+                nm = rule.get("name") or rule.get("Name") or ""
+            inc_names.append(nm or f"Rule {i}")
+
+    concept_sets = cohort.get("ConceptSets") or cohort.get("conceptSets") or []
+    cs_preview = []
+    if isinstance(concept_sets, list):
+        for cs in concept_sets[:5]:
+            if not isinstance(cs, dict):
+                continue
+            expr = cs.get("expression") if isinstance(cs, dict) else None
+            items = cs.get("items") if isinstance(cs, dict) else []
+            if not items and isinstance(expr, dict):
+                items = expr.get("items") or []
+            cs_preview.append(
+                {
+                    "id": cs.get("id"),
+                    "name": cs.get("name") or cs.get("Name"),
+                    "items": len(items or []),
+                }
+            )
+
+    try:
+        excerpt_src = json.dumps(cohort_obj)
+    except Exception:
+        excerpt_src = ""
+    excerpt = _truncate_text(excerpt_src, snippet_limit)
+
+    return {
+        "ref": ref,
+        "cohortId": cid,
+        "name": name,
+        "description": desc,
+        "washoutDays": washout.get("PriorDays") if isinstance(washout, dict) else None,
+        "inclusionRuleCount": len(inc_rules) if isinstance(inc_rules, list) else 0,
+        "inclusionRuleNames": inc_names,
+        "conceptSets": cs_preview,
+        "excerpt": excerpt,
+    }
+
+
+def _characterization_previews(refs, max_files=CHAR_PREVIEW_MAX_FILES, char_limit=CHAR_PREVIEW_LIMIT):
+    previews = []
+    for ref in refs[:max_files]:
+        path = resolve_local_path(ref)
+        try:
+            with open(path, "rb") as f:
+                raw = f.read(char_limit + 1024)
+        except Exception as e:
+            previews.append({"ref": ref, "error": str(e)})
+            continue
+        if b"\x00" in raw:
+            previews.append({"ref": ref, "error": "binary file not previewed"})
+            continue
+        txt = raw.decode("utf-8", errors="replace")
+        truncated = len(raw) > char_limit
+        if truncated and char_limit:
+            txt = txt[:char_limit] + f"... [truncated {len(raw) - char_limit} bytes]"
+        previews.append({"ref": ref, "preview": txt})
+    return previews
 
 
 def _filter_catalog_recs(recs, catalog_rows, max_results):
@@ -488,9 +579,12 @@ def propose_concept_set_diff():
             }
         )
 
+    total_items = len(items)
+    preview_n = min(20, total_items)
     user_prompt = f"""Tool: concept-sets-review
 Study intent: {study_intent}
-First 20 items: {json.dumps(items[:20])}"""
+Concept set size: {total_items}
+Preview (first {preview_n} items): {json.dumps(items[:preview_n])}"""
     llm = maybe_call_model(build_llm_prompt("concept-sets-review", user_prompt))
     if llm:
         for f in llm.get("findings", []):
@@ -600,26 +694,44 @@ def phenotype_recommendations():
         return jsonify({"error": "protocolRef and cohortsCatalogRef are required"}), 400
 
     protocol_text = load_text(protocol_ref)
-    catalog_rows = load_cohort_catalog_csv(catalog_ref)
+    catalog_rows_all = load_cohort_catalog_csv(catalog_ref)
+    if len(catalog_rows_all) == 0:
+        return jsonify({"error": "cohortsCatalogRef resolved to an empty catalog"}), 400
+
+    catalog_preview = catalog_rows_all[:CATALOG_PREVIEW_LIMIT]
+    allowed_ids_all = [r["cohortId"] for r in catalog_rows_all if r.get("cohortId")]
+    if len(allowed_ids_all) == 0:
+        return jsonify({"error": "No cohortIds found in cohorts catalog"}), 400
+    allowed_ids_prompt = allowed_ids_all[:CATALOG_ALLOWED_PREVIEW_LIMIT] if CATALOG_ALLOWED_PREVIEW_LIMIT else allowed_ids_all
+    allowed_note = allowed_ids_prompt
+    if len(allowed_ids_prompt) < len(allowed_ids_all):
+        allowed_note = allowed_ids_prompt + [f"... (+{len(allowed_ids_all) - len(allowed_ids_prompt)} more ids not shown)"]
+    allowed_note_json = json.dumps(allowed_note)
+
+    max_results = max(0, min(max_results, len(allowed_ids_all)))
 
     plan = "Suggest relevant phenotypes from catalog for the study intent (stub if no LLM)."
     recs = []
+    invalid_ids = []
 
     user_prompt = f"""Tool: phenotype_recommendations
 maxResults: {max_results}
-Allowed cohortIds: {[r['cohortId'] for r in catalog_rows]}
+Allowed cohortIds (total {len(allowed_ids_all)}, showing up to {len(allowed_ids_prompt)}): {allowed_note_json}
 Study intent (truncated): {protocol_text[:2000]}
-Catalog preview (first 200 rows): {json.dumps(catalog_rows[:200])}"""
+Catalog preview (first {len(catalog_preview)} of {len(catalog_rows_all)} rows): {json.dumps(catalog_preview)}"""
 
     llm = maybe_call_model(build_llm_prompt("phenotype_recommendations", user_prompt))
     mode = "llm"
     if llm and isinstance(llm.get("phenotype_recommendations"), list):
-        recs = _filter_catalog_recs(llm.get("phenotype_recommendations"), catalog_rows, max_results)
+        raw_recs = llm.get("phenotype_recommendations") or []
+        allowed_set = {cid for cid in allowed_ids_all}
+        invalid_ids = sorted({rec.get("cohortId") for rec in raw_recs if rec.get("cohortId") not in allowed_set and rec.get("cohortId") is not None})
+        recs = _filter_catalog_recs(raw_recs, catalog_rows_all, max_results)
         if llm.get("plan"):
             plan = llm["plan"]
     else:
         mode = "stub"
-        for row in catalog_rows[:max_results]:
+        for row in catalog_rows_all[:max_results]:
             recs.append(
                 {
                     "cohortId": row.get("cohortId"),
@@ -635,6 +747,12 @@ Catalog preview (first 200 rows): {json.dumps(catalog_rows[:200])}"""
             "phenotype_recommendations": recs,
             "mode": mode,
             "artifact": {"protocolRef": protocol_ref, "cohortsCatalogRef": catalog_ref},
+            "catalog_stats": {
+                "total_rows": len(catalog_rows_all),
+                "preview_rows": len(catalog_preview),
+                "allowed_ids": len(allowed_ids_all),
+            },
+            "invalid_ids_filtered": invalid_ids,
         }
     )
 
@@ -645,6 +763,9 @@ def phenotype_improvements():
     protocol_ref = body.get("protocolRef")
     cohort_refs = body.get("cohortRefs") or []
     characterization_refs = body.get("characterizationRefs") or []
+
+    if LOG_MODEL:
+        log_lines("PHEN_IMPROV BODY > ", json.dumps({"protocolRef": protocol_ref, "cohortRefs": cohort_refs, "characterizationRefs": characterization_refs})[:5000])
 
     if not protocol_ref or not isinstance(cohort_refs, list) or len(cohort_refs) == 0:
         return jsonify({"error": "protocolRef and cohortRefs[] are required"}), 400
@@ -665,20 +786,29 @@ def phenotype_improvements():
         if isinstance(cid, (int, float)):
             allowed_ids.append(int(cid))
     allowed_ids = sorted(list(set(allowed_ids)))
+    if len(allowed_ids) == 0:
+        return jsonify({"error": "No cohortIds found; include an 'id' in the cohort JSON or encode it in the filename (e.g., 33_name.json)."}), 400
+
+    cohort_summaries = [_summarize_cohort_for_prompt(c.get("cohort"), c.get("ref")) for c in cohorts]
+    char_previews = _characterization_previews(characterization_refs) if characterization_refs else []
 
     plan = "Review selected phenotypes for improvements against study intent (stub if no LLM)."
     user_prompt = f"""Tool: phenotype_improvements
 Allowed cohortIds: {allowed_ids or '[ids provided in inputs]'}
 Study intent (truncated): {protocol_text[:2000]}
-Phenotype names: {json.dumps([{'ref': c['ref'], 'name': c['cohort'].get('name') or c['cohort'].get('Name')} for c in cohorts])}
-Characterization summaries (optional paths): {characterization_refs}"""
+Phenotype summaries (truncated content): {json.dumps(cohort_summaries)}
+Characterization previews (limited to {CHAR_PREVIEW_MAX_FILES} files, {CHAR_PREVIEW_LIMIT} chars each): {json.dumps(char_previews)}"""
 
     llm = maybe_call_model(build_llm_prompt("phenotype_improvements", user_prompt))
     mode = "llm"
     improvements = []
     code_suggestion = None
+    invalid_targets = []
     if llm:
         raw_improvements = llm.get("phenotype_improvements") or []
+        invalid_targets = sorted(
+            {imp.get("targetCohortId") for imp in raw_improvements if imp.get("targetCohortId") not in allowed_ids and imp.get("targetCohortId") is not None}
+        )
         if allowed_ids:
             improvements = [imp for imp in raw_improvements if imp.get("targetCohortId") in allowed_ids]
         else:
@@ -696,6 +826,7 @@ Characterization summaries (optional paths): {characterization_refs}"""
             "phenotype_improvements": improvements,
             "code_suggestion": code_suggestion,
             "mode": mode,
+            "invalid_targets_filtered": invalid_targets,
             "artifact": {"protocolRef": protocol_ref, "cohortRefs": cohort_refs, "characterizationRefs": characterization_refs},
         }
     )

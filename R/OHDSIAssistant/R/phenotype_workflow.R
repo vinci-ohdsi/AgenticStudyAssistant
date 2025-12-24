@@ -81,11 +81,15 @@ pullPhenotypeDefinitions <- function(cohortIds,
 reviewPhenotypes <- function(protocolPath,
                              cohortJsonPaths,
                              characterizationPaths = NULL,
-                             interactive = TRUE) {
+                             interactive = TRUE,
+                             apply = FALSE,
+                             select = NULL,
+                             outputDir = NULL) {
   protocolPath <- normalizePath(protocolPath, winslash = "/", mustWork = FALSE)
-  cohortJsonPaths <- vapply(cohortJsonPaths, normalizePath, character(1), winslash = "/", mustWork = FALSE)
+  cohortJsonPaths <- unname(vapply(cohortJsonPaths, normalizePath, character(1), winslash = "/", mustWork = FALSE))
+  if (length(cohortJsonPaths) == 0) stop("No cohortJsonPaths provided to reviewPhenotypes().")
   if (!is.null(characterizationPaths)) {
-    characterizationPaths <- vapply(characterizationPaths, normalizePath, character(1), winslash = "/", mustWork = FALSE)
+    characterizationPaths <- unname(vapply(characterizationPaths, normalizePath, character(1), winslash = "/", mustWork = FALSE))
   }
   body <- list(
     protocolRef = protocolPath,
@@ -107,8 +111,26 @@ reviewPhenotypes <- function(protocolPath,
       cat("  [stub] No improvements returned (LLM not connected).\n")
     } else {
       for (p in imp) {
-        cat(sprintf("  - %s\n", p$summary %||% jsonlite::toJSON(p, auto_unbox = TRUE)))
+        cat(sprintf("  - [%s] %s\n",
+                    p$targetCohortId %||% "?",
+                    p$summary %||% jsonlite::toJSON(p, auto_unbox = TRUE)))
       }
+    }
+  }
+  if (apply) {
+    picks <- selectPhenotypeImprovements(
+      improvements = res$phenotype_improvements,
+      cohortJsonPaths = cohortJsonPaths,
+      select = select,
+      apply = TRUE,
+      outputDir = outputDir,
+      interactive = interactive
+    )
+    res$selected_improvements <- picks$selected
+    res$written <- picks$written
+    if (interactive && length(picks$written)) {
+      cat("\nSaved improvement notes:\n")
+      cat(paste(sprintf("  - %s", picks$written), collapse = "\n"), "\n")
     }
   }
   res
@@ -151,6 +173,98 @@ selectPhenotypeRecommendations <- function(recommendations,
   }
 
   integer(0)
+}
+
+
+#' Select phenotype improvements and optionally persist notes
+#' @param improvements list from reviewPhenotypes()$phenotype_improvements
+#' @param cohortJsonPaths character vector of cohort JSON paths
+#' @param select optional vector of cohortIds/indices or "all"/NULL to pick all
+#' @param apply logical; if TRUE, write selected improvements to disk
+#' @param outputDir directory for notes; defaults to directory of first cohortJsonPath
+#' @param interactive prompt user selection when select is NULL
+#' @return list with `selected` improvements and `written` file paths (if any)
+selectPhenotypeImprovements <- function(improvements,
+                                        cohortJsonPaths,
+                                        select = NULL,
+                                        apply = FALSE,
+                                        outputDir = NULL,
+                                        interactive = interactive()) {
+  imps <- improvements %||% list()
+  if (length(imps) == 0) return(list(selected = list(), written = character(0)))
+
+  ids <- vapply(imps, function(x) x$targetCohortId %||% NA_real_, numeric(1))
+  cohortJsonPaths <- cohortJsonPaths %||% character(0)
+  cohortPathIds <- vapply(cohortJsonPaths, .extractCohortIdFromPath, integer(1), USE.NAMES = FALSE)
+
+  # selection logic
+  idx <- integer(0)
+  if (is.null(select) || identical(select, "all")) {
+    if (interactive) {
+      labels <- vapply(seq_along(imps), function(i) {
+        cid <- ids[[i]] %||% NA_real_
+        path_hint <- cohortJsonPaths[match(cid, cohortPathIds, nomatch = 0)] %||% ""
+        sprintf("Cohort %s: %s%s",
+                cid %||% "?",
+                imps[[i]]$summary %||% "<no summary>",
+                ifelse(path_hint != "", sprintf(" [%s]", basename(path_hint)), ""))
+      }, character(1))
+      picks <- utils::select.list(labels, multiple = TRUE, title = "Select phenotype improvements to keep")
+      if (length(picks) == 0) return(list(selected = list(), written = character(0)))
+      idx <- match(picks, labels)
+    } else {
+      idx <- seq_along(imps)
+    }
+  } else if (is.numeric(select)) {
+    if (all(select %% 1 == 0) && all(select >= 1) && all(select <= length(imps))) {
+      idx <- as.integer(select)
+    } else {
+      idx <- which(ids %in% as.integer(select))
+    }
+  }
+
+  if (length(idx) == 0) return(list(selected = list(), written = character(0)))
+  picked <- imps[idx]
+  written <- character(0)
+
+  if (apply && length(picked)) {
+    if (is.null(outputDir)) {
+      outputDir <- dirname(cohortJsonPaths[[1]] %||% ".")
+    }
+    if (!dir.exists(outputDir)) dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
+    written <- .writePhenotypeImprovementNotes(picked, cohortJsonPaths, cohortPathIds, outputDir)
+  }
+
+  list(selected = picked, written = written)
+}
+
+
+.extractCohortIdFromPath <- function(path) {
+  base <- basename(path %||% "")
+  m <- regexpr("[0-9]+", base)
+  if (m[1] > 0) {
+    val <- substr(base, m[1], m[1] + attr(m, "match.length") - 1)
+    return(suppressWarnings(as.integer(val)))
+  }
+  NA_integer_
+}
+
+
+.writePhenotypeImprovementNotes <- function(improvements, cohortJsonPaths, cohortPathIds, outputDir) {
+  written <- character(0)
+  if (length(improvements) == 0) return(written)
+  ids <- vapply(improvements, function(x) x$targetCohortId %||% NA_integer_, integer(1))
+  for (cid in unique(ids)) {
+    if (is.na(cid)) next
+    idx_imp <- which(ids == cid)
+    if (length(idx_imp) == 0) next
+    path_idx <- match(cid, cohortPathIds, nomatch = 0)
+    fname_base <- if (path_idx > 0) tools::file_path_sans_ext(basename(cohortJsonPaths[[path_idx]])) else paste0("cohort_", cid)
+    target <- file.path(outputDir, sprintf("%s_improvements.json", fname_base))
+    jsonlite::write_json(improvements[idx_imp], path = target, auto_unbox = TRUE, pretty = TRUE)
+    written <- c(written, target)
+  }
+  written
 }
 
 

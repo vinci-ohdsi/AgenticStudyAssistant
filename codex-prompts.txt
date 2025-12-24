@@ -1,0 +1,1523 @@
+
+--
+
+There's been a lot of changes in the code since we were working on `concept-sets-review`, `cohort-critique-general-design`. I want you to go back to the endpoints that help to review and fix concept definitions and just double check that the prompts being sent to the LLM are functioning. An example is something out of a line. The request to the LLM from the ACP says first 20 items when it's only sending a single concept set definition. Here is a log of the transaction where I noticed the issue (also, it no longer is working):
+
+
+"
+OPENWEBUI OUTGOING TEXT > You are the OHDSI Assistant (ACP Model) for lint tools.
+OPENWEBUI OUTGOING TEXT > - Return ONLY valid JSON (no prose/markdown/fences).
+OPENWEBUI OUTGOING TEXT > - Tasks: `concept-sets-review`, `cohort-critique-general-design`.
+OPENWEBUI OUTGOING TEXT > - Keep outputs < 15 KB.
+OPENWEBUI OUTGOING TEXT > If uncertain, return required keys with empty arrays.
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > Below is dynamic content to analyze. Do not act until after STRICT OUTPUT RULES.
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > USER REQUEST:
+OPENWEBUI OUTGOING TEXT > Tool: concept-sets-review
+OPENWEBUI OUTGOING TEXT > Study intent: Study intent: Identify clinical risk factors for older adult patients who experience an adverse evetn of acute gastro-intenstinal (GI) bleeding. The GI bleed has to be detected in the hospital setting. Risk factors can include concomitant medications or chronic and acute conditions.
+OPENWEBUI OUTGOING TEXT > First 20 items: [{"conceptId": 757688, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 40164052, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 46275300, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 35603277, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 794852, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 800878, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 766529, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 40230761, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 785788, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 703244, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 745790, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 766814, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 735979, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}, {"conceptId": 712615, "domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": false}]
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > STRICT OUTPUT RULES:
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > Tool: concept-sets-review
+OPENWEBUI OUTGOING TEXT > Output contract:
+OPENWEBUI OUTGOING TEXT > {
+OPENWEBUI OUTGOING TEXT >   "plan": "string <=300 chars",
+OPENWEBUI OUTGOING TEXT >   "findings": [Finding],
+OPENWEBUI OUTGOING TEXT >   "patches": [Patch],
+OPENWEBUI OUTGOING TEXT >   "risk_notes": ["string"],
+OPENWEBUI OUTGOING TEXT >   "actions": [Action]  # optional if supported
+OPENWEBUI OUTGOING TEXT > }
+OPENWEBUI OUTGOING TEXT > Finding: { "id": "snake_case", "severity": "low|medium|high", "impact": "design|validity|portability|performance", "message": "<=220 chars", "evidence": [{"ref":"string","note":"<=160 chars"}] }
+OPENWEBUI OUTGOING TEXT > Patch: { "artifact": "string", "type": "jsonpatch", "ops": [ { "op": "note", "path": "/path", "value": { "summary": "<=160 chars", "details": "<=400 chars" } } ] }
+OPENWEBUI OUTGOING TEXT > Action (concept sets): { "type": "set_include_descendants", "where": { "domainId": "...", "conceptClassId": "...", "includeDescendants": true|false }, "value": true|false, "rationale": "<=160 chars", "confidence": 0-1 }
+OPENWEBUI OUTGOING TEXT > Constraints: JSON only, no markdown. Keep output < 15 KB. If nothing to report, return empty arrays and a neutral plan.
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > - Return exactly ONE JSON object.
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > - Do NOT wrap output in markdown, code fences, or prose.
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > - If uncertain, return required keys with empty arrays/strings.
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > - Respect schema constraints and allowed IDs.
+OPENWEBUI INCOMING RAW > {"id":"gemma3:12b-f039974f-2892-4465-ad53-dd6558416e42","created":1766581946,"model":"gemma3:12b","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","message":{"role":"assistant","content":"```json\n{\n  \"plan\": \"Review initial concept set items for relevance to risk factors for older adult patients experiencing acute GI bleeding in a hospital setting. Focus on drug concepts initially, then expand to conditions if needed.\",\n  \"findings\": [\n    {\n      \"id\": \"drug_focus\",\n      \"severity\": \"low\",\n      \"impact\": \"validity\",\n      \"message\": \"The initial set primarily consists of drug concepts. While medications are crucial risk factors, consider broader condition concepts as well.\",\n      \"evidence\": [\n        {\n          \"ref\": \"first_20_items\",\n          \"note\": \"The first 20 items are almost entirely drug ingredients, potentially overlooking relevant chronic or acute conditions.\"\n        }\n      ]\n    }\n  ],\n  \"patches\": [],\n  \"risk_notes\": [],\n  \"actions\": []\n}\n```"}}],"object":"chat.completion","usage":{"response_token/s":41.47,"prompt_token/s":1441.4,"total_duration":5499493642,"load_duration":75405227,"prompt_eval_count":1005,"prompt_tokens":1005,"prompt_eval_duration":697237960,"eval_count":196,"completion_tokens":196,"eval_duration":4726285590,"approximate_total":"0h0m5s","total_tokens":1201,"completion_tokens_details":{"reasoning_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}}}
+127.0.0.1 - - [24/Dec/2025 07:12:26] "POST /tools/propose_concept_set_diff HTTP/1.1" 200 -
+"
+
+--
+Unfortunately, still getting the same error. Here is the log output requested:
+
+PHEN_IMPROV BODY > {"protocolRef": "/ai-agent/HadesProject/AgenticStudyAssistant/demo/protocol.md", "cohortRefs": {"/ai-agent/HadesProject/AgenticStudyAssistant/demo/327_Pharyngitis.json": "/ai-agent/HadesProject/AgenticStudyAssistant/demo/327_Pharyngitis.json", "/ai-agent/HadesProject/AgenticStudyAssistant/demo/330_Abdominal_bloating.json": "/ai-agent/HadesProject/AgenticStudyAssistant/demo/330_Abdominal_bloating.json"}, "characterizationRefs": []}
+
+
+"
+ No encoding supplied: defaulting to UTF-8.
+ Error in .acp_post("/tools/phenotype_improvements", body) (from acp_client.R#35) : ACP error: {                                                         
+   "error": "protocolRef and cohortRefs[] are required"
+ }
+"
+
+--
+
+I stopped and restarted R and re-ran testPhenotypeWorflow.R but it failed with a similar error:
+
+"
+ Error in .acp_post("/tools/phenotype_improvements", body) (from acp_client.R#28) : ACP error: {                                                         
+   "error": "protocolRef and cohortRefs[] are required"
+ }
+"
+
+Please keep trying to fix. I think you can run the workflow to confirm any new changes work.
+
+
+-- 
+
+testPhenotypeWorkflow.R works up until the call to `OHDSIAssistant::reviewPhenotypes(protocol, paths, interactive = TRUE)`. That call returns the error pasted below. I checked that the paths parameter points to valid JSON cohort definition specificiation files. Let's try to get this to work with the ACP+LLM.
+
+"
+ Error in .acp_post("/tools/phenotype_improvements", body) (from acp_client.R#25) : ACP error: {                                                         
+   "error": "protocolRef and cohortRefs[] are required"
+ }
+"
+
+--
+
+Before we get started today, take note of this handoff summary from the prior session:
+
+I would like to add a use case for a new ACP server/bridge that leverages and LLM to convert a study research question description into one or more candidate phenotype definitions. Here is the envisioned workflow:
+
+1) The user writes their research question (e.g., see ./AgenticStudyAssistant/demo/protocol.md)
+
+2) The user requests the assistance to identify the electronic health records phenotype definitions (aka "cohort definitions") that would be relevant. If R, they would call a function in the OHDSIAssistant package pointing to the research protocol markdown file.
+
+3) The ACP would communicate the request to the LLM along with a list of identifiers and names for existing OHDSI phenotype definitions from ./AgenticStudyAssistant/demo/Cohorts.csv.
+
+4) The model will reply with JSON object that `phenotype_recommendations` containing a list of zero or more suggested phenotypes from the Cohorts.csv that would potentially be useful for the study. Each recommendation will come with a justification.
+
+5) The ACP server/bridge will pass this information in R along with a prompt the user to review the options and select which ones (if any) that they think would be relevant to their study.
+
+6) The user makes a selection and the OHDSIAssistant then retrieves the cohort definitions by loading the phenotype R library (`library(PhenotypeLibrary)`), getting the phenotype definitions by cohort id (e.g., `cohortDefinitionSet <- PhenotypeLibrary::getPlCohortDefinitionSet(cohortIds = c(33,1197))` and then writing the JSON cohort definitions to the project folder in the same folder where the protocol.md file is located. You can find the full code for PhenotypeLibrary in a sub-folder called "PhenotypeLibrary".
+
+7) The OHDSIAssistant then asks the user wants a review for suggested improvements to the phenotype definitions based on the study goals and the data source information. If they agree, the ACP server/bridge sends the specific details of the cohort definitions to the LLM prompting for a review based on the study goals in protocol.md, the concept sets, and logic of the definition.
+
+	7b) Optionally, the user could have the OHDSIAssistant generate the cohorts on their data source (specified by dbDetails.json) and run cohort characterization to download the reports generated (all deidentified aggregate data) that could be sent to the LLM for further analysis and better suggestions. For an example of code that will accomplish this, see ./AgenticStudyAssistant/scripts/testPhenotypeRun.R and note that the code for CohortDiagnostics in a sub-folder by the same name.  
+
+8) The LLM replies to the ACP server with `phenotype_improvements` containing a list of zero or more suggested phenotype changes (summaries along with `actions`) to concept sets or logic.
+
+9) The OHDSIAssistant presents the report of suggestions to the user for review. The user can select to have the OHDSIAssistant make the changes.
+
+	9b) The OHDSIAssistant can at this point request R coding assistance from the LLM through the ACP server/bridge. The user would have to approve in a prompt trigged by the OHDSIAssistant.  After sending the request, response to the ACP server would come back as a `code_suggestion` that the ACP can ask the user if it OK to implement.  
+
+This workflow demands a complex set of changes along with improvements to the system prompt of the LLM (see ./AgenticStudyAssistant/agentstudyassistant-system-prompt.md).
+
+The progress we made so far:
+
+  - **New phenotype tools in ACP (Flask)**: Added `/tools/phenotype_recommendations` and `/tools/phenotype_improvements`. Catalog loading now resolves paths robustly. Prompts are modular: overview + spec files under `acp/prompts/` assembled per tool. Prompt structure is now: overview → “dynamic content” notice → user request → STRICT OUTPUT RULES (schema + hard JSON-only rules). Catalog preview expanded to 200 rows. Bare-ID fallback removed; LLM must return proper JSON. Filename-based cohortId extraction exists for improvements.
+
+  - **Prompt files** (`acp/prompts/`):
+    - `overview_lint.md`, `overview_phenotype.md`
+    - `spec_concept_sets_review.md`, `spec_cohort_critique.md`
+    - `spec_phenotype_recommendations.md`, `spec_phenotype_improvements.md`
+    Each spec includes schema, constraints, and examples.
+
+  - **R package (OHDSIAssistant)**: Added phenotype workflow helpers:
+    - `suggestPhenotypes()`, `selectPhenotypeRecommendations()`, `pullPhenotypeDefinitions()`, `reviewPhenotypes()` with path normalization and stub fallbacks.
+    - NAMESPACE updated; demo script `scripts/testPhenotypeWorkflow.R` uses selection helper.
+    - README updated with phenotype flow usage.
+
+  - **System prompt**: Legacy monolithic prompt still exists, but ACP now builds prompts dynamically from the modular files.
+
+  - **Recent success**: Phenotype recommendations now returning correct JSON (model returned proper `plan` + `phenotype_recommendations` array, no fences inside ACP parsing).
+
+  - **Outstanding items (from the earlier 9-step list)**:
+    1) Already wired new endpoints/prompts.
+    2) Added R selection flow/persistence for cohort JSON.
+    3) Remaining: tighten phenotype improvements flow, ensure catalog size/allowed-id constraints honored, and consider interactive UI in R for applying improvements.
+    4) Future: integrate characterization outputs (step 7b), code suggestions/application flow, and any expanded lint/improvement rules.
+    5) Add CI-friendly mock responses if needed.
+
+  - **Paths**:
+    - ACP server: `AgenticStudyAssistant/acp/server.py`
+    - Prompt fragments: `AgenticStudyAssistant/acp/prompts/`
+    - R workflow: `AgenticStudyAssistant/R/OHDSIAssistant/R/phenotype_workflow.R`
+    - Demo script: `AgenticStudyAssistant/scripts/testPhenotypeWorkflow.R`
+
+  - **Notes**: ACP runs from `AgenticStudyAssistant` cwd; resolves relative paths with `resolve_local_path`. Use `build_llm_prompt(tool, user_prompt)` to assemble prompts per call.
+
+
+----
+
+That was the first success of phenotype_recommendation! See the JSON:
+
+```json
+OPENWEBUI INCOMING RAW > {"id":"gemma3:12b-3dfe1f1d-b017-4675-83dd-73eb436df51f","created":1766533031,"model":"gemma3:12b","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","message":{"role":"assistant","content":"```json\n{\n  \"plan\": \"Recommend phenotypes related to anxiety and fear, focusing on diagnostic and treatment-related cohorts.\",\n  \"phenotype_recommendations\": [\n    {\n      \"cohortId\": 335,\n      \"cohortName\": \"Anxiety or Fear\",\n      \"justification\": \"Directly captures diagnoses or events related to anxiety or fear, aligning with the study’s focus.\",\n      \"confidence\": 0.85\n    }\n  ]\n}\n```"}}],"object":"chat.completion","usage":{"response_token/s":41.3,"prompt_token/s":1513.64,"total_duration":5488510018,"load_duration":93795221,"prompt_eval_count":4096,"prompt_tokens":4096,"prompt_eval_duration":2706055289,"eval_count":111,"completion_tokens":111,"eval_duration":2687418324,"approximate_total":"0h0m5s","total_tokens":4207,"completion_tokens_details":{"reasoning_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}}}
+```
+
+We are done for the day. Write a summary that I can use in a new session tomorrow so that the code agent is aware of important details about our work and, the progress we have made, what we are working on now, and the items in the 9 item list remiaining to work on.  
+
+-- 
+
+You did not do what I asked. ALL of the instructions that we have crafted are now before the dynamic content. What I want is this:
+
+<intro to the model of the use case - "You are the OHDSI Assistant (ACP Model) for phenotype tools."...>
+<"Below is dynamic content that you will analyze and respond to but do not take action until you see the STRICT OUTPUT RULES">
+<Dynamic content ...>
+<STRICT OUTPUT RULES>
+<Output contract:...>
+<Constraints:...>
+
+Please make this happen.
+
+-- 
+
+That is better for phenotype_recommendations but still not there. Below is the response. Change things so that the Output Contract and Constraints come right in the section currently labeled "STRICT OUTPUT RULES"
+
+```json
+OPENWEBUI INCOMING RAW > {"id":"gemma3:12b-d08b7cff-9c40-4450-9d75-b33c6036a453","created":1766532401,"model":"gemma3:12b","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","message":{"role":"assistant","content":"```json\n{\n  \"cohorts\": [\n    {\n      \"id\": \"295\",\n      \"name\": \"Acute Hepatic Failure in persons without pre-existing liver disease\",\n      \"logic\": \"Event of hepatic Failure, indexed on the diagnosis of Hepatic Failure. Patients are excluded if they have a diagnosis of chronic hepatic failure any time in the past or on the same day. Also excluded patients who have other prior liver disease such as viral hepatitis, Liver Cirrhosis, liver fibrosis, alcoholic and others anytime prior including index\"\n    }\n  ]\n}\n```"}}],"object":"chat.completion","usage":{"response_token/s":41.14,"prompt_token/s":1329.26,"total_duration":8983122280,"load_duration":2727848101,"prompt_eval_count":4096,"prompt_tokens":4096,"prompt_eval_duration":3081406409,"eval_count":127,"completion_tokens":127,"eval_duration":3086739987,"approximate_total":"0h0m8s","total_tokens":4223,"completion_tokens_details":{"reasoning_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}}}
+```
+
+--
+
+Unfortunately, that went the opposite direction. Are you able to split the "system prompt" into modules that are specific to each ACP call (sort of like LLM tool prompts but more detailed)? For example, take the file AgenticStudyAssistant/agentstudyassistant-system-prompt.md and split its content into 6 yaml or json files
+
+- one with an overview of lint tools like `concept-sets-review`, `cohort-critique-general-design`
+- one with an overview of study artifact selection/improvement tools like `phenotype_recommendations` and `phenotype_improvements`
+- one each for detailed spec (JSON Schema, examples, constraints) each acp call related to these.
+
+I notice that the instructions at the end of the prompt are better followed. So, maybe insert the overviews pior to the detailed data and then the detailed spec for the tool. Revise the ACP code to organize these prompts at call time dynamically. 
+
+--
+
+Better but not quite. Below was the reply from the model. It shows that, in spite of being very detailed in the instructions, we did not get the JSON in the format we need. Look closely at the instructions we are sending (formerly the 'system prompt') and the prompts being sent by the ACP to ensure good alignment and no conflict. I will try once more once you have made changes.
+
+```json
+OPENWEBUI INCOMING RAW > {"id":"gemma3:12b-74799297-2037-476e-b6dc-9f40b8f8d7b1","created":1766531166,"model":"gemma3:12b","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","message":{"role":"assistant","content":"```json\n[\n  {\n    \"cohortId\": \"288\",\n    \"name\": \"Type 2 Diabetes Mellitus indexed on diagnosis, treatment or lab results\"\n  },\n  {\n    \"cohortId\": \"292\",\n    \"name\": \"Hepatic Failure\"\n  },\n  {\n    \"cohortId\": \"294\",\n    \"name\": \"Acute Hepatic Injury with no chronic hepatic failure\"\n  },\n  {\n    \"cohortId\": \"295\",\n    \"name\": \"Acute Hepatic Failure in persons without pre-existing liver disease\"\n  },\n  {\n    \"cohortId\": \"299\",\n    \"name\": \"Acute gastrointestinal bleeding or perforation events\"\n  },\n  {\n    \"cohortId\": \"304\",\n    \"name\": \"Neurofibromatosis type 1 (FP)\"\n  },\n  {\n    \"cohortId\": \"305\",\n    \"name\": \"Neurofibromatosis type 1 without Type 2 (FP)\"\n  },\n  {\n    \"cohortId\": \"306\",\n    \"name\": \"Optical pathway glioma and neurofibromatosis (FP)\"\n  },\n  {\n    \"cohortId\": \"307\",\n    \"name\": \"Optical pathway glioma or non malignant neoplasm of optic nerve w neurofibromatosis\"\n  },\n  {\n    \"cohortId\": \"308\",\n    \"name\": \"Optical pathway glioma with MRI imaging and ophthalmology visits Neurofibromatosis\"\n  }\n]\n```"}}],"object":"chat.completion","usage":{"response_token/s":40.93,"prompt_token/s":1358.55,"total_duration":14432617725,"load_duration":2635320393,"prompt_eval_count":4096,"prompt_tokens":4096,"prompt_eval_duration":3014968358,"eval_count":356,"completion_tokens":356,"eval_duration":8698294948,"approximate_total":"0h0m14s","total_tokens":4452,"completion_tokens_details":{"reasoning_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}}}
+[openwebui-error] failed to parse JSON object: Extra data: line 4 column 4 (char 114)
+```
+
+--
+
+So, we are not quite getting what we need from the model but I think our ACP code is not really the source of the issue. I  read more about the LLM we are trying to get results back from and found that it does not pay attentiion to the system prompt that I have been setting in the open-webui workspace for the model. Instead of using a separate system role, provide system-level instructions directly within the *initial user prompt*. Revise the ACP server so that, for every new call to the LLM, it provides the prompt in the file AgenticStudyAssistant/ agentstudyassistant-system-prompt.md
+
+-- 
+
+Good. Good. Following that, change these Examples for the LLM system prompt to follow the schema definitions you just generated so that I can copy them into the revised system prompt:
+
+
+Example (illustrative):
+```json
+{
+  "plan": "Rank phenotypes matching Parkinson’s treatment and outcomes.",
+  "phenotype_recommendations": [
+    { "cohortId": 33, "cohortName": "Parkinsons", "justification": "Captures PD diagnosis aligned with study intent.", "confidence": 0.78 },
+    { "cohortId": 1197, "cohortName": "PD Meds", "justification": "Medication exposure conceptually linked to outcome comparisons.", "confidence": 0.64 }
+  ]
+}
+```
+
+### Phenotype improvement tool (`phenotype_improvements`)
+- Return JSON with keys: `plan`, `phenotype_improvements`, and optional `code_suggestion`.
+- `phenotype_improvements` items must have:
+  - `targetCohortId` (int) from provided list
+  - `summary` (≤ 220 chars)
+  - optional `actions`: advisory notes only, e.g., `{ "type": "note", "path": "<string>", "value": "<string>" }`
+- `code_suggestion` (optional) schema:
+  `{ "language": "R", "summary": "<string>", "snippet": "<code>" }`
+- Keep total output < 12 KB. No prose/markdown.
+- Do not invent cohortIds; only use those provided.
+
+Example (illustrative):
+```json
+{
+  "plan": "Review phenotypes against study intent; focus on washout and exposure timing.",
+  "phenotype_improvements": [
+    {
+      "targetCohortId": 33,
+      "summary": "Add 365d washout and exclude prior PD meds to reduce prevalence bias.",
+      "actions": [
+        { "type": "note", "path": "/PrimaryCriteria/ObservationWindow", "value": "Consider PriorDays>=365." }
+      ]
+    }
+  ],
+  "code_suggestion": {
+    "language": "R",
+    "summary": "Example to tighten washout in Circe JSON before export.",
+    "snippet": "cohort$PrimaryCriteria$ObservationWindow$PriorDays <- 365"
+  }
+}
+```
+
+
+--
+
+I would like you to keep the change that shows more catalog entries but rever the change that accepts bare lists. Rather, I will improve the LLM system prompt. Just emit for me in your response a JSON schema specification for the respose that the ACP server will be looking for.  
+
+-- 
+
+Below  is a log of the ACP communication with the LLM. Notice that the LLM did suggest cohort ids but did not put them in a proper response object tagged with the necessary identifier. We need to fix that. Also, we should send a larger catalog of phenotypes e.g., 200. Please make the needed changes.
+
+
+OPENWEBUI OUTGOING TEXT > - Keep total output < 10 KB. No prose or markdown.
+OPENWEBUI OUTGOING TEXT > Study intent (truncated): Study intent: Identify clinical risk factors for older adult patients who experience an acute GI bleed. The GI bleed has to be detected in the hospital setting. Risk factors can include concomitant medications or chronic and acute conditions.
+OPENWEBUI OUTGOING TEXT > 
+OPENWEBUI OUTGOING TEXT > Catalog preview (id, name, logicDescription): [{"cohortId": 2, "cohortName": "COVID-19 diagnosis or SARS-CoV-2 test (1pos)", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 3, "cohortName": "Cough or Sputum", "logicDescription": "All events of cough or sputum finding"}, {"cohortId": 4, "cohortName": "Diarrhea", "logicDescription": "All events of diarrhea including Functional Diarrhea"}, {"cohortId": 5, "cohortName": "Dyspnea", "logicDescription": "All events of dyspnea including difficulty breathing or abnormal breathing"}, {"cohortId": 6, "cohortName": "Fever", "logicDescription": "All events of fever or elevated temperature measurement"}, {"cohortId": 7, "cohortName": "Headache or Headache disorder", "logicDescription": "All events of Headache or headache disorder"}, {"cohortId": 8, "cohortName": "Altered smell or taste including Anosmia, Hyposmia or Dysgeusia", "logicDescription": "Altered smell or taste including Anosmia, Hyposmia or Dysgeusia"}, {"cohortId": 9, "cohortName": "Sore throat", "logicDescription": "All events of Sore throat"}, {"cohortId": 10, "cohortName": "Nausea or Vomiting", "logicDescription": "All events of Nausea or vomiting"}, {"cohortId": 11, "cohortName": "Malaise and or fatigue", "logicDescription": "All events of Malaise and or fatigue"}, {"cohortId": 12, "cohortName": "Rhinitis or common cold or Sinusitis", "logicDescription": "All events of Rhinitis or common cold"}, {"cohortId": 13, "cohortName": "Myalgia (not explained by injury, ischemia or systemic inflammation)", "logicDescription": "All events of Myalgia. Exclude persons with secondary causes of myalgia explained by injury, ischemia or chronic systemic inflammation"}, {"cohortId": 14, "cohortName": "Myalgia", "logicDescription": "All events of Myalgia"}, {"cohortId": 15, "cohortName": "Exposure to viral disease", "logicDescription": "all events of Exposure to viral disease. Persons exit on cohort end date"}, {"cohortId": 16, "cohortName": "Exposure to SARS-Cov 2 and coronavirus", "logicDescription": ""}, {"cohortId": 17, "cohortName": "Exposure to SARS-CoV-2", "logicDescription": "all events of Exposure to SARS-CoV-2. Persons exit on cohort end date"}, {"cohortId": 18, "cohortName": "Multisystem inflammatory syndrome (MIS)", "logicDescription": "all events of Multisystem inflammatory syndrome (MIS). Persons exit on cohort end date"}, {"cohortId": 20, "cohortName": "Bronchitis or Bronchiolitis", "logicDescription": "All events of Bronchitis"}, {"cohortId": 21, "cohortName": "Acute respiratory distress syndrome (ARDS) or Acute Respiratory Failure", "logicDescription": "All events of Acute respiratory distress syndrome (ARDS) or Acute Respiratory Failure"}, {"cohortId": 22, "cohortName": "SARS-CoV-2 testing", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 23, "cohortName": "Inpatient Hospitalization (1Pe, 0Era)", "logicDescription": "All events of Inpatient visit. This cohort is deemed validated as it represents data convention and did not need to go thru peer review process"}, {"cohortId": 24, "cohortName": "Emergency room visits (0Pe, 0Era)", "logicDescription": "All events of Emergency Room visits. This cohort is deemed validated as it represents data convention and did not need to go thru peer review process"}, {"cohortId": 25, "cohortName": "All cause mortality", "logicDescription": "Earliest observation of any death"}, {"cohortId": 27, "cohortName": "Asthma without COPD", "logicDescription": "Earliest of either asthma diagnosis or therapy for asthma with a history of another asthma therapy more than 180 days before. The person should not have a diagnosis or treatment for COPD in past"}, {"cohortId": 29, "cohortName": "Autoimmune condition (FP)", "logicDescription": "Withdrawn by contributor before peer review. No clinical description, evaluation or discussions found. May need to be revisited in future"}, {"cohortId": 30, "cohortName": "Tuberculosis", "logicDescription": "All events of tuberculosis with at least 3 different drugs for tuberculosis at anytime on or after diagnosis"}, {"cohortId": 31, "cohortName": "Malignant neoplasm excluding non-melanoma skin cancer", "logicDescription": "All events with a malignant neoplastic disease or history of malignant neoplastic disease"}, {"cohortId": 32, "cohortName": "Obesity", "logicDescription": "Persons with obesity diagnosis or a body weight measurement > 120 kg or 265 lbs"}, {"cohortId": 33, "cohortName": "Dementia", "logicDescription": "Persons with the diagnosis of dementia, includes history of Dementia"}, {"cohortId": 34, "cohortName": "Hypertensive disorder or hypertensive complications", "logicDescription": "Hypertensive disorder diagnosis or complication of hypertension"}, {"cohortId": 35, "cohortName": "Chronic kidney disease (FP)", "logicDescription": "Withdrawn by contributor before peer review. No clinical description, evaluation or discussions found. May need to be revisited in future"}, {"cohortId": 36, "cohortName": "Human immunodeficiency virus (not HIV2) infection", "logicDescription": "Earliest diagnosis of HIV (not HIV2) with another diagnosis in future or a treatment for HIV"}, {"cohortId": 37, "cohortName": "Hepatitis C infection, carrier status or antibody positivity", "logicDescription": "Earliest diagnosis of Hepatitis C"}, {"cohortId": 38, "cohortName": "Heart disease", "logicDescription": "Earliest of any Heart disease or arteriosclerosis of coronary artery bypass graft"}, {"cohortId": 39, "cohortName": "End stage renal disease (FP)", "logicDescription": "Withdrawn by contributor before peer review. No clinical description, evaluation or discussions found. May need to be revisited in future"}, {"cohortId": 40, "cohortName": "Diabetes Mellitus Type 2 or history of diabetes", "logicDescription": "Earliest of any Type 2 Diabetes Mellitus or History of Diabetes"}, {"cohortId": 41, "cohortName": "Chronic kidney disease broad (FP)", "logicDescription": "Withdrawn by contributor before peer review. No clinical description, evaluation or discussions found. May need to be revisited in future"}, {"cohortId": 42, "cohortName": "End stage renal disease broad (FP)", "logicDescription": "Withdrawn by contributor before peer review. No clinical description, evaluation or discussions found. May need to be revisited in future"}, {"cohortId": 43, "cohortName": "Respiratory or pulmonary tuberculosis", "logicDescription": "Earliest occurrence of respiratory or pulmonary tuberculosis"}, {"cohortId": 44, "cohortName": "COVID-19", "logicDescription": "all events of COVID-19. Persons exit on cohort end date"}, {"cohortId": 45, "cohortName": "COVID-19 diagnosis with SARS-Cov-2 test (-3d to 3d)", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 46, "cohortName": "COVID-19 diagnosis and SARS-CoV-2 test (1pos) within 3d", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 47, "cohortName": "COVID-19 diagnosis and SARS-CoV-2 test (1pos) (0neg) within 3d", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 48, "cohortName": "COVID-19 diagnosis and SARS-CoV-2 test (0pos upto 3d, 1neg within 3d)", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 51, "cohortName": "SARS-CoV-2 test positive result", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 52, "cohortName": "SARS-CoV-2 test negative result", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 53, "cohortName": "SARS-CoV-2 test positive or negative result - keep persons with positive", "logicDescription": "Withdrawn by contributor before peer review"}, {"cohortId": 54, "cohortName": "Febrile seizure", "logicDescription": "All events of Febrile seizures"}, {"cohortId": 56, "cohortName": "SARS-CoV-2 test (1pos) or COVID-19 diagnosis with (0 neg -3d to 3d)", "logicDescription": "All events of Covid Diagnosis without a negative test result or a SARS-Cov-2 test positive test"}, {"cohortId": 57, "cohortName": "Bleeding", "logicDescription": "all events of Bleeding. Persons exit on cohort end date"}]
+OPENWEBUI INCOMING RAW > {"id":"gemma3:12b-4e6f2df5-c985-468a-9d05-2e29e60d4a8a","created":1766527325,"model":"gemma3:12b","choices":[{"index":0,"logprobs":null,"finish_reason":"stop","message":{"role":"assistant","content":"10, 14, 30, 31, 34, 38, 40, 57"}}],"object":"chat.completion","usage":{"response_token/s":41.43,"prompt_token/s":1453.96,"total_duration":6346920721,"load_duration":2744615960,"prompt_eval_count":4096,"prompt_tokens":4096,"prompt_eval_duration":2817139515,"eval_count":31,"completion_tokens":31,"eval_duration":748285229,"approximate_total":"0h0m6s","total_tokens":4127,"completion_tokens_details":{"reasoning_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}}}
+
+--
+
+Ok. Now that you have seen and edited that system prompt, take another look at the code that is communicating with the LLM, identify any other improvements that could be made, and make them. 
+
+-- 
+
+I see you reported wiring endpoints  to stricter LLM prompts/contracts. That is good. What changes should be made to agentstudyassistant-system-prompt.md which is the system prompt to the LLM?  
+
+-- 
+
+Ok. Let's move on to step 1 and 2 of the next steps: 1) Wire the new endpoints to the refined LLM prompts and response schemas; 2) Add a selection flow in R (interactive or programmatic) plus persistence of pulled cohort JSON.
+
+----
+
+I would like to add a use case for the ACP server/bridge that leverage the LLM to convert a study research question description into one or more candidate phenotype definitions. Here is the envisioned workflow:
+
+1) The user writes their research question (e.g., see ./AgenticStudyAssistant/demo/protocol.md)
+
+2) The user requests the assistance to identify the electronic health records phenotype definitions (aka "cohort definitions") that would be relevant. If R, they would call a function in the OHDSIAssistant package pointing to the research protocol markdown file.
+
+3) The ACP would communicate the request to the LLM along with a list of identifiers and names for existing OHDSI phenotype definitions from ./AgenticStudyAssistant/demo/Cohorts.csv.
+
+4) The model will reply with JSON object that `phenotype_recommendations` containing a list of zero or more suggested phenotypes from the Cohorts.csv that would potentially be useful for the study. Each recommendation will come with a justification.
+
+5) The ACP server/bridge will pass this information in R along with a prompt the user to review the options and select which ones (if any) that they think would be relevant to their study.
+
+6) The user makes a selection and the OHDSIAssistant then retrieves the cohort definitions by loading the phenotype R library (`library(PhenotypeLibrary)`), getting the phenotype definitions by cohort id (e.g., `cohortDefinitionSet <- PhenotypeLibrary::getPlCohortDefinitionSet(cohortIds = c(33,1197))` and then writing the JSON cohort definitions to the project folder in the same folder where the protocol.md file is located. You can find the full code for PhenotypeLibrary in a sub-folder called "PhenotypeLibrary".
+
+7) The OHDSIAssistant then asks the user wants a review for suggested improvements to the phenotype definitions based on the study goals and the data source information. If they agree, the ACP server/bridge sends the specific details of the cohort definitions to the LLM prompting for a review based on the study goals in protocol.md, the concept sets, and logic of the definition.
+
+	7b) Optionally, the user could have the OHDSIAssistant generate the cohorts on their data source (specified by dbDetails.json) and run cohort characterization to download the reports generated (all deidentified aggregate data) that could be sent to the LLM for further analysis and better suggestions. For an example of code that will accomplish this, see ./AgenticStudyAssistant/scripts/testPhenotypeRun.R and note that the code for CohortDiagnostics in a sub-folder by the same name.  
+
+8) The LLM replies to the ACP server with `phenotype_improvements` containing a list of zero or more suggested phenotype changes (summaries along with `actions`) to concept sets or logic.
+
+9) The OHDSIAssistant presents the report of suggestions to the user for review. The user can select to have the OHDSIAssistant make the changes.
+
+	9b) The OHDSIAssistant can at this point request R coding assistance from the LLM through the ACP server/bridge. The user would have to approve in a prompt trigged by the OHDSIAssistant.  After sending the request, response to the ACP server would come back as a `code_suggestion` that the ACP can ask the user if it OK to implement.  
+
+This workflow demands a complex set of changes along with improvements to the system prompt of the LLM (see ./AgenticStudyAssistant/agentstudyassistant-system-prompt.md). So, let's work on this in steps.
+
+First develop an overall plan that we can discuss and agree upon. 
+
+--
+
+This first message is to give you a summary of what has happened so far. Study this message and then study code in the sub-folder AgenticStudyAssistant before we start working on anything.
+
+You are currently working in a folder configures with an R project environment that will be important as we develop further.
+
+Within the sub-folder AgenticStudyAssistant is a prototype that build a minimal working ACP-style assistant for OHDSI study design linting that:
+
+Exposes two lint rules via an ACP-like HTTP bridge written in Python using Flask:
+concept-sets-review → /tools/propose_concept_set_diff
+cohort-critique-general-design → /tools/cohort_lint
+
+Provides an R package (OHDSIAssistant) with lintStudyDesign() that calls those tools
+
+What is fully implemented and working
+ACP bridge (Python / Flask)
+
+File: acp/server.py
+
+Endpoints:
+GET /health
+POST /tools/propose_concept_set_diff
+POST /tools/cohort_lint
+
+Behavior:
+Loads JSON from local paths or URLs
+Performs deterministic checks first:
+Concept sets: empty set, duplicate conceptIds, mixed domains
+Cohorts: missing/zero washout, inverted inclusion windows
+
+LLM output is merged, never trusted blindly
+
+“Patches” are advisory notes, not executable JSON Patch (by design)
+
+Verified:
+/health responds
+Both lint endpoints return expected findings on demo data
+
+Works in both normal and FLASK_DEBUG=1 modes
+
+R package: OHDSIAssistant
+Location: R/OHDSIAssistant/
+
+Key exported functions:
+
+acp_connect(url, token = NULL)
+lintStudyDesign(...)
+Assumes a study folder containing:
+concept_set.json
+cohort_definition.json
+protocol.md
+
+For each requested task:
+Uses ACP bridge if connected
+
+Otherwise falls back to local deterministic R rules
+
+Prints:
+A short “plan”
+Structured findings with severity + impact
+
+Writes results to:
+<studyPackage>/inst/assistant/advice_<timestamp>.json
+
+Local fallback rules
+Implemented in rules_local_fallback.R
+
+Logic mirrors the Python bridge so results stay consistent
+This allows:
+
+Offline testing
+Deterministic CI checks
+
+Graceful failure if ACP/LLM is down
+
+Demo & scripts
+demo/
+concept_set.json (intentionally has duplicates + mixed domains)
+cohort_definition.json (zero washout + inverted window)
+protocol.md (study intent text)
+
+scripts/
+start_acp.sh — starts the Flask bridge
+r_demo_commands.R — end-to-end R example
+test_llm_actions.R - focused specifically on llm actions
+
+What is intentionally not done yet
+These are explicit next steps, not oversights:
+
+Replace "op": "note" patches with real JSON Patch aligned to ATLAS schema
+Add resolvers for:
+webapi://cohort/<id>
+webapi://conceptSet/<id>
+
+Pull in:
+Achilles summaries
+
+DQD results
+to drive severity, evidence links, and confidence
+
+Expand rule library (e.g., time-at-risk alignment, prevalent-user bias heuristics)
+
+
+----------------------------------------------------------------------
+
+Ok. We are setting up to wrap up today's session. Go through and update any README documentation but do not edit README-LLM-OPENWEBUI-CONFIG.md
+
+--
+
+Great! Update the two scripts test_llm_actions.R and r_demo_commands.R to demonstrate the two different approaches. 
+
+-- 
+The functionality is all there now for our very initial testing. However, the function calls are disjointed for between OHDSIAssistant::lintStudyDesign and OHDSIAssistant:::`.acp_post` response object. Make it so that both the acp deterministic tools that take action based on patch suggestions, and the actions taken based on LLM `action` lists are managed by the same OHDSIAssistant::lintStudyDesign. Perhaps add a parameter to the function that turns on management of LLM response `action` items, if they are returned. If they are not returned, and there are ACP tools to manage the issues, these can be handled. Wither way, I would like the functions OHDSIAssistant::proposeIncludeDescendantsPatch, OHDSIAssistant::previewConceptSetPatch, and OHDSIAssistant::applyConceptSetPatch to be more flexible so they can work with patch actions from the LLM response or based on a mapping from patch suggestions from the LLM. The goal is to retain the functionality but make the code interface a bit simpler. We will eventually create abstractions to manage these different action approaches but, for now, we just need a simpler. 
+
+-- 
+
+The ACP API is working but somehow we lost some of the functionality whereby a check for the use descendant concepts in concept set does not appear to be happening. One thing I want to check is if the ACP server is sending the entire concept set content from the json file or just some sample of attributes. See the output below focusing on OPENWEBUI OUTGOING TEXT. Is that what is actually sent to the remote model by the ACP server?
+
+"
+OPENWEBUI OUTGOING TEXT > You are checking an OHDSI concept set for study design issues.
+OPENWEBUI OUTGOING TEXT > Study intent: Study intent: Identify clinical risk factors for receiving a diagnosis of Parkinsons disease for older adult patients. The Parkinsons phenotype is defined as an EHR diagnosis of Parkinsons or record of a drug with a Parkinsons disease indication but excluding patients who are on neuroleptic medications.  Key risks: prevalent-user bias; improper time-at-risk; limited overlap.
+OPENWEBUI OUTGOING TEXT > First 20 items: [{"conceptId": 757688, "domainId": "Drug"}, {"conceptId": 40164052, "domainId": "Drug"}, {"conceptId": 46275300, "domainId": "Drug"}, {"conceptId": 35603277, "domainId": "Drug"}, {"conceptId": 794852, "domainId": "Drug"}, {"conceptId": 800878, "domainId": "Drug"}, {"conceptId": 766529, "domainId": "Drug"}, {"conceptId": 40230761, "domainId": "Drug"}, {"conceptId": 785788, "domainId": "Drug"}, {"conceptId": 703244, "domainId": "Drug"}, {"conceptId": 745790, "domainId": "Drug"}, {"conceptId": 766814, "domainId": "Drug"}, {"conceptId": 735979, "domainId": "Drug"}, {"conceptId": 712615, "domainId": "Drug"}
+"
+
+-- 
+
+Here is your next task: Add LLM `actions` support (safe, deterministic) to the OHDSI Assistant prototype
+
+We already support deterministic file edits. Now, we need to:
+1) Parse any `actions` array emitted by the LLM in the tool routes and include it verbatim in their JSON responses (so the R client can see what the model proposed).
+2) Add a new executor route that **safely executes** a supplied `actions` array by mapping each action to an existing deterministic op (starting with `set_include_descendants`).
+3) Add an R helper to apply LLM actions to a file-based concept set (preview or apply), reusing the existing `/actions/concept_set_edit` logic under the hood.
+4) Include a tiny demo script.
+
+Design rules
+- The LLM never supplies raw JSON Pointer paths; it supplies **typed actions**. We already have `op_set_include_descendants(...)`; reuse it.
+- Executor must validate `type`, coerce `value` to bool, and ignore unsupported/unsafe actions, returning a count of applied/ignored.
+- For now, **only concept-set actions** are supported; cohort actions should be rejected with a clear error.
+
+# Suggested approach *(adapt as needed)*:
+
+## 1) Modify `acp/server.py`
+
+### 1.a Include LLM `actions` in tool responses
+
+- After `llm = maybe_call_gemini(prompt)` and merging `findings/patches`, also extract `actions` if present:
+
+```python
+actions = []
+if llm and isinstance(llm.get("actions", None), list):
+    # shallow copy of model-proposed actions (do not execute here)
+    actions = llm["actions"]
+```
+
+- Add `actions` to the returned JSON object:
+```python
+return jsonify({
+    "plan": plan,
+    "findings": findings,
+    "patches": patches,
+    "actions": actions,
+    "risk_notes": risk_notes
+})
+```
+
+Do this in both tools (concept set diff and cohort lint)
+
+#### 1.b Add a new executor route: `POST /actions/execute_llm`
+
+Create a new Flask route that accepts:
+
+```json
+{
+  "artifactRef": "path-or-url-to-concept-set.json",
+  "actions": [ /* LLM-proposed actions */ ],
+  "write": false,
+  "overwrite": false,
+  "backup": true
+}
+
+```
+
+Behavior:
+
+- Load and canonicalize the concept set (reuse `_to_canonical_concept_set`).
+
+- Iterate actions:
+	- Only support `"set_include_descendants"`.
+	- Validate `where` keys (`domainId`, `conceptClassId`, `includeDescendants`), coerce `value` to bool.
+	- Apply via `op_set_include_descendants(canon, where, value)`.
+	- Track `applied_count` and collect `preview_changes` (conceptId/from/to).
+	- If unsupported `type`, append an entry to `ignored_actions` with reason.
+- If `write==true`, reconstruct original shape with `_from_canonical_concept_set(...)` and write via `write_json(...)` (respect overwrite + backup).
+
+Return:
+
+```json
+{
+  "plan": "Execute LLM actions (N applied, M ignored).",
+  "preview_changes": [ { "conceptId": ..., "from": false, "to": true } ],
+  "counts": { "applied": N, "changed": K, "ignored": M },
+  "ignored": [ { "type": "foo", "reason": "unsupported" } ],
+  "artifact": "<input ref>",
+  "applied": true|false,
+  "written_to": "<path or null>"
+}
+
+```
+
+#### Code to add (append near other routes):
+
+```python
+@app.post("/actions/execute_llm")
+def execute_llm_actions():
+    body = request.get_json(force=True)
+    ref = body.get("artifactRef")
+    actions = body.get("actions", [])
+    write = bool(body.get("write", False))
+    overwrite = bool(body.get("overwrite", False))
+    backup = bool(body.get("backup", True))
+
+    if not isinstance(actions, list):
+        return jsonify({"error": "actions must be a list"}), 400
+
+    raw = load_json(ref)
+    canon, fmt = _to_canonical_concept_set(raw)
+
+    total_applied = 0
+    preview_changes = []
+    ignored = []
+
+    for act in actions:
+        atype = act.get("type")
+        if atype == "set_include_descendants":
+            where = act.get("where", {})
+            value = bool(act.get("value", True))
+            # sanitize where
+            allowed_keys = {"domainId", "conceptClassId", "includeDescendants"}
+            where = {k: v for k, v in where.items() if k in allowed_keys}
+            before_len = len(preview_changes)
+            canon, changed = op_set_include_descendants(canon, where, value)
+            preview_changes.extend(changed)
+            # consider action applied if it targeted at least one item
+            if len(preview_changes) > before_len:
+                total_applied += 1
+            else:
+                ignored.append({"type": atype, "reason": "no items matched filter"})
+        else:
+            ignored.append({"type": atype, "reason": "unsupported action type"})
+
+    written_to = None
+    applied = False
+    if write:
+        out_obj = _from_canonical_concept_set(canon, fmt, raw)
+        written_to = write_json(ref, out_obj, backup=backup, overwrite=overwrite)
+        applied = True
+
+    return jsonify({
+        "plan": f"Execute LLM actions ({total_applied} applied, {len(ignored)} ignored).",
+        "preview_changes": preview_changes,
+        "counts": {"applied": total_applied, "changed": len(preview_changes), "ignored": len(ignored)},
+        "ignored": ignored,
+        "artifact": ref,
+        "applied": applied,
+        "written_to": written_to
+    })
+
+```
+
+*Note*: This executor currently assumes concept-set artifacts. If raw doesn’t match a concept-set shape, return `400` with a message like `"only concept-set actions are supported in this prototype"`.
+
+### 2) R helper to apply LLM actions
+
+Create `R/OHDSIAssistant/R/ops_llm_actions.R`:
+
+
+```r
+#' Apply LLM-proposed actions to a concept-set artifact via ACP
+#' @param conceptSetRef path to local concept set JSON
+#' @param actions list of action objects as returned by the tool response (`$actions`)
+#' @param preview if TRUE, no write (dry-run)
+#' @param overwrite if TRUE, overwrite file; otherwise write -assistant-v{n}.json
+#' @param backup if TRUE and overwrite=TRUE, create .bak once
+#' @return server response with preview/applied info
+applyLLMActionsConceptSet <- function(conceptSetRef, actions, preview = TRUE, overwrite = FALSE, backup = TRUE) {
+  body <- list(
+    artifactRef = conceptSetRef,
+    actions = actions %||% list(),
+    write = !isTRUE(preview),
+    overwrite = isTRUE(overwrite),
+    backup = isTRUE(backup)
+  )
+  .acp_post("/actions/execute_llm", body)
+}
+
+```
+
+
+Update `R/OHDSIAssistant/NAMESPACE` to export:
+
+```r
+export(applyLLMActionsConceptSet)
+```
+
+## 3) Demo script
+
+Create `scripts/test_llm_actions.R`:
+
+```r
+# scripts/test_llm_actions.R
+# Assumes you've run lintStudyDesign() and captured the tool response as `res`.
+# For demo, we call the concept-sets tool directly to fetch actions.
+
+devtools::load_all("R/OHDSIAssistant")
+OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
+
+concept_set_ref <- "demo/concept_set.json"
+
+# Ask tool to propose actions (via LLM); you can also reuse previous results in your session
+resp <- OHDSIAssistant:::`.acp_post`("/tools/propose_concept_set_diff", list(
+  conceptSetRef = concept_set_ref,
+  studyIntent   = paste(readLines("demo/protocol.md", warn = FALSE), collapse = " ")
+))
+
+actions <- resp$actions
+print(actions)
+
+# Preview execution of LLM actions
+prev <- OHDSIAssistant::applyLLMActionsConceptSet(concept_set_ref, actions, preview = TRUE)
+print(prev$counts)
+head(prev$preview_changes)
+
+# Apply after approval (fork file)
+applied <- OHDSIAssistant::applyLLMActionsConceptSet(concept_set_ref, actions, preview = FALSE, overwrite = FALSE, backup = TRUE)
+print(applied$written_to)
+
+
+```
+
+## 4) Acceptance criteria
+
+- Tool routes return `actions` (array) when the LLM includes them; otherwise `actions: []`.
+- `POST /actions/execute_llm` previews and applies only supported actions; others are reported in `ignored`.
+- End-to-end demo:
+1. Run ACP server.
+2. Call `/tools/propose_concept_set_diff` with a Drug/Ingredient concept set lacking `includeDescendants`.
+3. Receive actions proposing `set_include_descendants`.
+4. Use `applyLLMActionsConceptSet(..., preview=TRUE)` to see `changed > 0`.
+5. Apply with `preview=FALSE`; a `-assistant-v1.json` file appears; a second preview shows `changed == 0`.
+6. Keep all changes self-contained; do not break existing deterministic `/actions/concept_set_edit workflow`.
+
+--- 
+
+Hmmm, the action patch is not actually being applied to the problematic concept set.
+
+Below is the output the user sees in R. You can see from the file demo/concept_set.json that the patch was not applied in spite of what demo/inst/assistant/concept_set_edit_20251222T061833.json is stating. Also, the demo./concept_set.json.bak file has no time stamp (though you have one on the log file). Take more time to get this all fixed please.
+
+
+```
+> OHDSIAssistant::lintStudyDesign(
+  studyProtocol = "demo/protocol.md",
+  studyPackage  = "demo",
+  lintTasks     = c("concept-sets-review"),
+  apply         = FALSE,
+  interactive   = TRUE
+)
+No encoding supplied: defaulting to UTF-8.
+
+== Concept Sets Review ==
+
+
+
+--- 
+
+Hmmm, the action patch is not actually being applied to the problematic concept set.
+
+Below is the output the user sees in R. You can see from the file demo/concept_set.json that the patch was not applied in spite of what demo/inst/assistant/concept_set_edit_20251222T061833.json is stating. Also, the demo./concept_set.json.bak file has no time stamp (though you have one on the log file). Take more time to get this all fixed please.
+
+
+```
+> OHDSIAssistant::lintStudyDesign(
+  studyProtocol = "demo/protocol.md",
+  studyPackage  = "demo",
+  lintTasks     = c("concept-sets-review"),
+  apply         = FALSE,
+  interactive   = TRUE
+)
+No encoding supplied: defaulting to UTF-8.
+
+== Concept Sets Review ==
+
+
+--- 
+
+Hmmm, the action patch is not actually being applied to the problematic concept set.
+
+Below is the output the user sees in R. You can see from the file demo/concept_set.json that the patch was not applied in spite of what demo/inst/assistant/concept_set_edit_20251222T061833.json is stating. Also, the demo./concept_set.json.bak file has no time stamp (though you have one on the log file). Take more time to get this all fixed please.
+
+
+```
+> OHDSIAssistant::lintStudyDesign(
+  studyProtocol = "demo/protocol.md",
+  studyPackage  = "demo",
+  lintTasks     = c("concept-sets-review"),
+  apply         = FALSE,
+  interactive   = TRUE
+)
+No encoding supplied: defaulting to UTF-8.
+
+== Concept Sets Review ==
+
+
+--- 
+
+Hmmm, the action patch is not actually being applied to the problematic concept set.
+
+Below is the output the user sees in R. You can see from the file demo/concept_set.json that the patch was not applied in spite of what demo/inst/assistant/concept_set_edit_20251222T061833.json is stating. Also, the demo./concept_set.json.bak file has no time stamp (though you have one on the log file). Take more time to get this all fixed please.
+
+
+```
+> OHDSIAssistant::lintStudyDesign(
+  studyProtocol = "demo/protocol.md",
+  studyPackage  = "demo",
+  lintTasks     = c("concept-sets-review"),
+  apply         = FALSE,
+  interactive   = TRUE
+)
+No encoding supplied: defaulting to UTF-8.
+
+== Concept Sets Review ==
+File: demo/concept_set.json
+Review concept set for gaps and inconsistencies given the study intent: Study intent: Identify clinical risk factors for receiving a diagnosis of Parkinsons disease for older adult patients. The Parkinsons phenotype is defined as an... 
+  - [MEDIUM][design] Drug concepts may benefit from inclusion of descendant concepts for comprehensive coverage.
+> patch <- OHDSIAssistant::proposeIncludeDescendantsPatch("demo/concept_set.json")
+No encoding supplied: defaulting to UTF-8.
+> OHDSIAssistant::previewConceptSetPatch("demo/concept_set.json", patch)
+Set includeDescendants=true for Drug/Ingredient entries that lack it. 
+   conceptId includeDescendants includeDescendants.1
+1     757688              FALSE                 TRUE
+2   40164052              FALSE                 TRUE
+3   46275300              FALSE                 TRUE
+4   35603277              FALSE                 TRUE
+5     794852              FALSE                 TRUE
+6     800878              FALSE                 TRUE
+7     766529              FALSE                 TRUE
+8   40230761              FALSE                 TRUE
+9     785788              FALSE                 TRUE
+10    703244              FALSE                 TRUE
+11    745790              FALSE                 TRUE
+12    766814              FALSE                 TRUE
+13    735979              FALSE                 TRUE
+14    712615              FALSE                 TRUE
+> OHDSIAssistant::applyConceptSetPatch("demo/concept_set.json", patch, backup = TRUE)
+No encoding supplied: defaulting to UTF-8.
+Applied concept set patch to demo/concept_set.json
+```
+
+-- 
+
+Make a few small tweaks to the code you just wrote in R for OHDSIAssistant::applyConceptSetPatch :
+- write a line to the console indicating of the edit was done and what the backup file is.
+- use timestamps with your backups so, instead of demo/concept_set.json.bak it would be concept_set.json.bak_<day, hour, minute, sec>
+- double check that you code correctly edits the concept set specified by the file b/c I did not find a change in the supposedly edited file during teesting. 
+
+--
+
+Ok. To use the R helpers, the user will need to know which file paths are in need of patching. Ensure that the output of OHDSIAssistant::lintStudyDesign specifies the files that have issues (if possible) or at least the folder where the file with the issues resides. 
+
+--
+
+Excellent work! Now we will start to develop actions that can be taken with the user's approval. In the case of R session, these would (for now) be modifications to file-based artifacts that can be loaded into R such as concept sets, cohort definitions. Later, changes to R code used to execute the varous parts of study design. Also, we will work on Atlas/WebAPI use cases later.
+
+We will start with executable actions (deterministic): a compact, schema-aware operation our ACP server understands and can turn into exact JSON edits (RFC-6902). We will keep the LLM advisory (safe) and let the ACP server synthesize executable actions from either:
+- deterministic rules (e.g., “set includeDescendants=true for all Drug/Ingredient items that lack it”), or
+- structured “action intents” emitted by the model
+
+Let's start with a simple use case for the `concept-sets-review`. This is how it already configured on the remote LLM side:
+
+(THIS BLOCK IS INFORMATIONAL ONLY)
+- test: *Failure to use descendant concepts in the DRUG domain when possibly relevant* (suggest_descendants_concept_set, severity: medium, impact: design)
+- example: concepts in the DRUG domain where the concept set uses only an ingredient concept without specifying "includeDescendants:" true
+- patch: Add a jsonpatch note explaining to the user that the concept set would likely be sub-optimal if used in a cohort definition with drug_exposure criteria because record in that table tend to have clinical drug codes (i.e., codes that specify drug concepts with strengh and formulation). An appropriate action would be to edit the concept set to set all ingredient concepts in the JSON concept set definition to have "includeDescendants:" true"
+(END OF BLOCK)
+
+You will now add tooling on the ACP to make editing of concept sets possible with approval from within R. Here is a minimal new Action Op for this simple use case:
+
+```json
+{
+  "artifactRef": "path-or-url-to-concept-set.json",
+  "ops": [
+    {
+      "op": "set_include_descendants",
+      "where": {
+        "domainId": "Drug",
+        "conceptClassId": "Ingredient",
+        "includeDescendants": false
+      },
+      "value": true
+    }
+  ],
+  "write": false
+}
+```
+
+- `where` is a filter over the canonicalized concept-set item shape
+- `write=false` = dry-run (preview). Toggle to true only after user approval in R.
+
+For the ACP endpoint,  do something like this:
+
+`POST /actions/concept_set_edit` → returns:
+```json
+{
+  "plan": "Set includeDescendants=true for Drug/Ingredient entries that lack it.",
+  "preview_changes": [
+    {"conceptId": <some concept id>, "from": {"includeDescendants": false}, "to": {"includeDescendants": true}},
+    ...
+  ],
+  "applied": false,
+  "written_to": "same-file-or-new-file-path"
+}
+```
+
+We also need an R UX. We will start with editing files based on patch suggestions. Later we will work on editing R code.
+```r
+# 1) Ask the assistant to propose an executable action (deterministic)
+patch <- OHDSIAssistant::proposeIncludeDescendantsPatch(conceptSetRef)
+
+# 2) Preview in R (shows table/diff)
+OHDSIAssistant::previewConceptSetPatch(conceptSetRef, patch)
+
+# 3) Apply after approval (writes to file; creates .bak)
+OHDSIAssistant::applyConceptSetPatch(conceptSetRef, patch, backup = TRUE)
+```
+
+Under the hood:
+- `proposeIncludeDescendantsPatch()` calls ACP deterministic rule:
+	- `POST /actions/concept_set_edit` with `write=false` and `op=set_include_descendants`.
+- `previewConceptSetPatch()` pretty-prints `preview_changes` and a unified diff.
+- `applyConceptSetPatch()` resubmits the same payload with `write=true` and saves:
+	- overwrite original or write `*-assistant-v1.json` (configurable).
+	- log an entry under `inst/assistant/` with `plan`, `op`, changed IDs, and a hash of pre/post.
+
+
+--- 
+
+I have open-webui set up with an LLM configured in an open-webui workspace using a system prompt to provide the suggested advice and changes for improving OHDSI study designs as JSON responses. You task is to get things set up so that the flask ACP client will communicate through API calls with the LLM. This will emulate a complete ACP-enabled system as our Flask ACP server will parse the JSON from the LLM and convert it into actions that could be taken on the user's machine within the folder that the R code is running in. Here is a working example of connecting to the open-webui workspace via an API call. Please proceed to port the prototype to use something similar. Make the `chat_with_model` more robust as you do your work. 
+
+api_url = "http://localhost:3000/api/chat/completions" 
+api_key = "sk-ecfd0f4dbf7d45ab9360d6f52e7f53fb" # a general student API key for bioinf_student@internal.triads
+llm_model = "agentstudyassistant"
+
+def chat_with_model(api_url, api_key, llm_model, prompt):
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    data = {
+      "model": llm_model,
+      "messages": [
+        {
+          "role": "user",
+          "content": prompt
+        }
+      ]
+    }
+    try:
+        response = requests.post(api_url, headers=headers, json=data)
+    except:
+        print("ERROR: There was an issue that prevented the request to the openwebui API")
+    finally:
+        g = response.json()
+        else:
+            print("ERROR: The request to the openwebui API completed but returned no response.")
+
+
+
+
+
+--- 
+
+So, I don't think we are getting anything useful from Gemini. Let's strip out the Gemini feature completely from the code. 
+
+----
+
+Ok. That was for Gemini. Will ACP logging work for other backends? For example, in the near future, I intend to interact with a different ACP-enabled CLI backend.
+
+----
+
+
+The next issue before we start extending this prototype is that the Gemini CLI might not actually be called using ACP. At least, I don't see any record of it in the terminal output of the flask server. Modify the code to show ACP interaction with the remote model. I have given you a nice example in the codex-acp library code located in sandbox/codex-acp/ where you can see the JSON-RPC calls and responses. This is just an example to show you more specifically what I would like to see in terms of transaction logging. 
+
+```
+OUTGOING OBJECT >
+
+((jsonrpc . 2.0) (method . initialize) (id . 1) (params (protocolVersion . 1) (clientCapabilities (fs (readTextFile . t) (writeTextFile . t)))))
+
+OUTGOING TEXT >
+
+{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":true,"writeTextFile":true}}}}
+
+
+INCOMING TEXT >
+
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":false,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{}},"authMethods":[{"id":"chatgpt","name":"Login with ChatGPT","description":"Use your ChatGPT login with Codex CLI (requires a paid ChatGPT subscription)"},{"id":"codex-api-key","name":"Use CODEX_API_KEY","description":"Requires setting the `CODEX_API_KEY` environment variable."},{"id":"openai-api-key","name":"Use OPENAI_API_KEY","description":"Requires setting the `OPENAI_API_KEY` environment variable."}],"agentInfo":{"name":"codex-acp","title":"Codex","version":"0.7.4"}}}
+
+
+INCOMING LINE >
+
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":false,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true},"mcpCapabilities":{"http":true,"sse":false},"sessionCapabilities":{}},"authMethods":[{"id":"chatgpt","name":"Login with ChatGPT","description":"Use your ChatGPT login with Codex CLI (requires a paid ChatGPT subscription)"},{"id":"codex-api-key","name":"Use CODEX_API_KEY","description":"Requires setting the `CODEX_API_KEY` environment variable."},{"id":"openai-api-key","name":"Use OPENAI_API_KEY","description":"Requires setting the `OPENAI_API_KEY` environment variable."}],"agentInfo":{"name":"codex-acp","title":"Codex","version":"0.7.4"}}}
+
+↳ Routing as response (result)
+
+OUTGOING OBJECT >
+
+((jsonrpc . 2.0) (method . authenticate) (id . 2) (params (methodId . chatgpt)))
+```
+
+
+------------
+
+So, I tested the code and ran into a small issue. If I set the acp server to run in debug mode (export FLASK_DEBUG=1 prior to ./scripts/start_acp.sh) then, in R I get the error below. This is the same error I get when I try to test with the Gemini CLI:
+
+> devtools::load_all("R/OHDSIAssistant")
+ℹ Loading OHDSIAssistant
+> OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
+> OHDSIAssistant::lintStudyDesign(
+  studyProtocol = "demo/protocol.md",
+  studyPackage  = "demo",
+  lintTasks     = c("concept-sets-review","cohort-critique-general-design"),
+  apply         = FALSE,
+  interactive   = TRUE
+)
+Error in request(headers = c(..., .headers)) : 
+  is.character(headers) is not TRUE
+ 
+
+
+
+--------------------------
+
+You first need to review the detailed prompt below that was generated by GPT 5.2 to give you concrete instruction on what to build. For context, we are building a minimal, working prototype that (a) exposes two lint rules via an ACP-style HTTP bridge, (b) provides an R package `OHDSIAssistant` with `lintStudyDesign()` that calls those tools, and (c) uses **Gemini CLI (ACP mode)** as a stand-in “model” (optional), with deterministic local checks as a fallback. I will paste this whole prompt into Codex to scaffold the repo.
+
+---
+
+## Repo layout to create
+
+.
+├─ acp/
+│ ├─ server.py
+│ ├─ tool_schemas/
+│ │ ├─ propose_concept_set_diff.schema.json
+│ │ └─ cohort_lint.schema.json
+│ ├─ README.md
+├─ R/
+│ └─ OHDSIAssistant/
+│ ├─ DESCRIPTION
+│ ├─ NAMESPACE
+│ ├─ R/
+│ │ ├─ acp_client.R
+│ │ ├─ lintStudyDesign.R
+│ │ ├─ utils_json.R
+│ │ └─ rules_local_fallback.R
+│ ├─ inst/
+│ │ └─ assistant/.gitkeep
+│ └─ man/.gitkeep
+├─ demo/
+│ ├─ concept_set.json
+│ ├─ cohort_definition.json
+│ └─ protocol.md
+├─ scripts/
+│ ├─ start_acp.sh
+│ ├─ start_gemini_acp_example.sh
+│ └─ r_demo_commands.R
+├─ .gitignore
+├─ README.md
+
+
+---
+
+## Files & contents
+
+### `acp/server.py` (Flask bridge; deterministic checks + optional Gemini)
+```python
+import os, json, subprocess, sys
+import requests
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+def load_json(ref: str):
+    if ref.startswith("http://") or ref.startswith("https://"):
+        r = requests.get(ref, timeout=30)
+        r.raise_for_status()
+        return r.json()
+    with open(ref, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def maybe_call_gemini(prompt: str):
+    if os.getenv("GEMINI_ACP_ENABLED") != "1":
+        return None
+    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+    try:
+        p = subprocess.run(
+            ["gemini", "chat", "--model", model, "--input", prompt],
+            capture_output=True, check=True, text=True
+        )
+        txt = p.stdout.strip()
+        start = txt.find("{")
+        end = txt.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(txt[start:end+1])
+    except Exception as e:
+        print(f"[gemini-warning] {e}", file=sys.stderr)
+    return None
+
+@app.get("/health")
+def health():
+    return jsonify({"status":"ok"})
+
+@app.post("/tools/propose_concept_set_diff")
+def propose_concept_set_diff():
+    body = request.get_json(force=True)
+    ref = body.get("conceptSetRef")
+    study_intent = body.get("studyIntent","")
+    cs = load_json(ref)
+
+    items = []
+    if isinstance(cs, dict) and "items" in cs:
+        for it in cs.get("items", []):
+            c = it.get("concept") or {}
+            items.append({"conceptId": c.get("conceptId"), "domainId": c.get("domainId")})
+    elif isinstance(cs, list):
+        for it in cs:
+            items.append({"conceptId": it.get("conceptId"), "domainId": it.get("domainId")})
+
+    findings = []
+    patches = []
+    risk_notes = []
+    plan = f"Review concept set for gaps and inconsistencies given the study intent: {study_intent[:160]}..."
+
+    concept_ids = [x.get("conceptId") for x in items if x.get("conceptId") is not None]
+    duplicates = [cid for cid in concept_ids if concept_ids.count(cid) > 1]
+    if len(items) == 0:
+        findings.append({"id":"empty_concept_set","severity":"high","impact":"design","message":"Concept set is empty."})
+    if duplicates:
+        findings.append({"id":"duplicate_concepts","severity":"medium","impact":"design","message":f"Duplicate conceptIds: {sorted(set(duplicates))}"})
+
+    domains = set([x.get("domainId") for x in items if x.get("domainId")])
+    if len(domains) > 1:
+        findings.append({"id":"mixed_domains","severity":"low","impact":"portability","message":f"Multiple domains detected: {sorted(domains)}"})
+
+    if duplicates:
+        ops = [{"op":"note","path":"/items","value":{"removeDuplicatesOf": sorted(set(duplicates))}}]
+        patches.append({"artifact": ref, "type":"jsonpatch", "ops": ops})
+
+    prompt = f"""You are checking an OHDSI concept set for study design issues.
+Study intent: {study_intent}
+First 20 items: {json.dumps(items[:20])}
+Return JSON with fields: findings[], patches[]. Keep patches high-level notes, not executable.
+"""
+    llm = maybe_call_gemini(prompt)
+    if llm:
+        for f in llm.get("findings", []):
+            if f not in findings: findings.append(f)
+        for p in llm.get("patches", []):
+            if p not in patches: patches.append(p)
+
+    return jsonify({"plan": plan, "findings": findings, "patches": patches, "risk_notes": risk_notes})
+
+@app.post("/tools/cohort_lint")
+def cohort_lint():
+    body = request.get_json(force=True)
+    ref = body.get("cohortRef")
+    cohort = load_json(ref)
+
+    plan = "Review cohort JSON for general design issues (washout/time-at-risk, inverted windows, empty or conflicting criteria)."
+    findings, patches, risk_notes = [], [], []
+
+    pc = cohort.get("PrimaryCriteria", {}) if isinstance(cohort, dict) else {}
+    washout = pc.get("ObservationWindow", {})
+
+    if not washout or washout.get("PriorDays") in (None, 0):
+        findings.append({"id":"missing_washout","severity":"medium","impact":"validity","message":"No or zero-day washout; consider >= 365 days."})
+        patches.append({"artifact":ref,"type":"jsonpatch","ops":[{"op":"note","path":"/PrimaryCriteria/ObservationWindow","value":{"ProposedPriorDays":365}}]})
+
+    try:
+        irules = cohort.get("InclusionRules", [])
+        for i, r in enumerate(irules):
+            w = r.get("window", {})
+            if w and w.get("start",0) > w.get("end",0):
+                findings.append({"id":f"inverted_window_{i}","severity":"high","impact":"validity","message":f"InclusionRule[{i}] has inverted window (start > end)."})
+    except Exception:
+        pass
+
+    prompt = f"""You are reviewing an OHDSI cohort JSON for general design risks.
+Return JSON fields findings[], patches[] (patches are notes, not executable).
+Cohort excerpt: {json.dumps({k:cohort.get(k) for k in list(cohort.keys())[:5]})}
+"""
+    llm = maybe_call_gemini(prompt)
+    if llm:
+        for f in llm.get("findings", []):
+            if f not in findings: findings.append(f)
+        for p in llm.get("patches", []):
+            if p not in patches: patches.append(p)
+
+    return jsonify({"plan": plan, "findings": findings, "patches": patches, "risk_notes": risk_notes})
+
+if __name__ == "__main__":
+    port = int(os.getenv("ACP_PORT", "7777"))
+    from flask import Flask
+    app.run(host="127.0.0.1", port=port)
+
+
+--
+acp/tool_schemas/propose_concept_set_diff.schema.json
+
+{
+  "title": "propose_concept_set_diff",
+  "type": "object",
+  "properties": {
+    "conceptSetRef": {"type":"string"},
+    "studyIntent": {"type":"string"},
+    "sourceStatsRef": {"type":"string"}
+  },
+  "required": ["conceptSetRef"]
+}
+
+
+--
+acp/tool_schemas/cohort_lint.schema.json
+
+{
+  "title": "cohort_lint",
+  "type": "object",
+  "properties": {
+    "cohortRef": {"type":"string"}
+  },
+  "required": ["cohortRef"]
+}
+
+
+--
+acp/README.md
+
+# ACP Bridge (Prototype)
+
+- Python 3.9+
+- Install deps: `python3 -m pip install flask requests`
+- Optional Gemini CLI:
+  - `export GEMINI_ACP_ENABLED=1`
+  - `export GEMINI_MODEL=gemini-2.0-flash-exp`
+- Endpoints:
+  - `GET /health`
+  - `POST /tools/propose_concept_set_diff`
+  - `POST /tools/cohort_lint`
+
+
+--
+# ACP Bridge (Prototype)
+
+- Python 3.9+
+- Install deps: `python3 -m pip install flask requests`
+- Optional Gemini CLI:
+  - `export GEMINI_ACP_ENABLED=1`
+  - `export GEMINI_MODEL=gemini-2.0-flash-exp`
+- Endpoints:
+  - `GET /health`
+  - `POST /tools/propose_concept_set_diff`
+  - `POST /tools/cohort_lint`
+
+
+--
+R/OHDSIAssistant/DESCRIPTION
+
+Package: OHDSIAssistant
+Type: Package
+Title: Assistant Prototype for OHDSI Study Design Linting
+Version: 0.0.1
+Authors@R: person("Your","Name", email="you@example.org", role=c("aut","cre"))
+Description: Prototype assistant client that connects to a local ACP bridge and performs study design linting (concept-sets-review, cohort-critique-general-design).
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.2)
+Imports: jsonlite, httr, utils
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+
+--
+R/OHDSIAssistant/NAMESPACE
+
+export(acp_connect)
+export(lintStudyDesign)
+
+
+--
+R/OHDSIAssistant/R/acp_client.R
+
+acp_state <- new.env(parent = emptyenv())
+
+#' Connect to ACP bridge
+#' @param url e.g. "http://127.0.0.1:7777"
+#' @param token optional bearer token
+#' @return invisible(TRUE)
+acp_connect <- function(url = "http://127.0.0.1:7777", token = NULL) {
+  acp_state$url <- sub("/$", "", url)
+  acp_state$token <- token
+  resp <- httr::GET(paste0(acp_state$url, "/health"))
+  if (httr::status_code(resp) != 200) stop("ACP bridge not reachable")
+  invisible(TRUE)
+}
+
+.acp_post <- function(path, body) {
+  if (is.null(acp_state$url)) stop("ACP not connected; call acp_connect().")
+  url <- paste0(acp_state$url, path)
+  headers <- list(`Content-Type`="application/json")
+  if (!is.null(acp_state$token)) headers$Authorization <- paste("Bearer", acp_state$token)
+  resp <- httr::POST(url, body = jsonlite::toJSON(body, auto_unbox = TRUE),
+                     httr::add_headers(.headers = headers))
+  if (httr::status_code(resp) >= 300) stop("ACP error: ", httr::content(resp, as="text"))
+  jsonlite::fromJSON(httr::content(resp, as="text"), simplifyVector = FALSE)
+}
+
+--
+R/OHDSIAssistant/R/utils_json.R
+
+read_json_ref <- function(ref) {
+  if (grepl("^https?://", ref)) {
+    txt <- readLines(ref, warn = FALSE)
+    return(jsonlite::fromJSON(paste(txt, collapse="\n"), simplifyVector = FALSE))
+  }
+  jsonlite::fromJSON(ref, simplifyVector = FALSE)
+}
+
+print_findings <- function(findings) {
+  if (length(findings) == 0) {
+    cat("  ✓ No findings.\n"); return(invisible(NULL))
+  }
+  for (f in findings) {
+    cat(sprintf("  - [%s][%s] %s\n",
+                toupper((f$severity %||% "INFO")),
+                (f$impact %||% ""),
+                (f$message %||% jsonlite::toJSON(f, auto_unbox=TRUE))))
+  }
+}
+
+`%||%` <- function(a,b) if (is.null(a)) b else a
+
+
+--
+R/OHDSIAssistant/R/rules_local_fallback.R
+
+local_concept_sets_review <- function(conceptSetRef, studyIntent="") {
+  cs <- read_json_ref(conceptSetRef)
+  items <- if (!is.null(cs$items)) cs$items else cs
+
+  get_item <- function(it) {
+    c <- it$concept %||% it
+    list(conceptId = c$conceptId %||% c$id %||% NA_integer_,
+         domainId  = c$domainId %||% NA_character_)
+  }
+  lst <- lapply(items, get_item)
+
+  plan <- sprintf("Local concept set review for %s", conceptSetRef)
+  findings <- list(); patches <- list(); risk_notes <- list()
+
+  ids <- vapply(lst, function(x) x$conceptId, integer(1))
+  ids <- ids[!is.na(ids)]
+  if (length(lst) == 0) {
+    findings <- c(findings, list(list(id="empty_concept_set", severity="high", impact="design", message="Concept set is empty.")))
+  }
+  if (length(ids)) {
+    dups <- ids[duplicated(ids)]
+    if (length(dups)) {
+      findings <- c(findings, list(list(id="duplicate_concepts", severity="medium", impact="design",
+                                        message=paste("Duplicate conceptIds:", paste(unique(dups), collapse=", ")))))
+      patches <- c(patches, list(list(artifact=conceptSetRef, type="jsonpatch",
+                                      ops=list(list(op="note", path="/items", value=list(removeDuplicatesOf=unique(dups)))))))
+    }
+  }
+  domains <- unique(vapply(lst, function(x) x$domainId %||% NA_character_, character(1)))
+  domains <- domains[!is.na(domains)]
+  if (length(domains) > 1) {
+    findings <- c(findings, list(list(id="mixed_domains", severity="low", impact="portability",
+                                      message=paste("Multiple domains:", paste(domains, collapse=", ")))))
+  }
+
+  list(plan=plan, findings=findings, patches=patches, risk_notes=risk_notes)
+}
+
+local_cohort_critique_general <- function(cohortRef) {
+  cdef <- read_json_ref(cohortRef)
+  plan <- sprintf("Local general cohort design lint for %s", cohortRef)
+  findings <- list(); patches <- list(); risk_notes <- list()
+
+  pc <- cdef$PrimaryCriteria %||% list()
+  wash <- pc$ObservationWindow %||% list()
+  if (is.null(wash$PriorDays) || identical(wash$PriorDays, 0L)) {
+    findings <- c(findings, list(list(id="missing_washout", severity="medium", impact="validity",
+                                      message="No or zero-day washout; consider >=365 days.")))
+    patches <- c(patches, list(list(artifact=cohortRef, type="jsonpatch",
+                                    ops=list(list(op="note", path="/PrimaryCriteria/ObservationWindow",
+                                                  value=list(ProposedPriorDays=365))))))
+  }
+
+  irules <- cdef$InclusionRules %||% list()
+  for (i in seq_along(irules)) {
+    w <- irules[[i]]$window %||% NULL
+    if (!is.null(w) && !is.null(w$start) && !is.null(w$end) && w$start > w$end) {
+      findings <- c(findings, list(list(id=paste0("inverted_window_", i), severity="high", impact="validity",
+                                        message=sprintf("InclusionRules[%d] has inverted window.", i))))
+    }
+  }
+  list(plan=plan, findings=findings, patches=patches, risk_notes=risk_notes)
+}
+
+
+--
+R/OHDSIAssistant/R/lintStudyDesign.R
+
+#' Lint study design (prototype)
+#' @param studyProtocol path or URL to protocol.md
+#' @param studyPackage path to local study folder ('.' ok)
+#' @param lintTasks character vector of tasks
+#' @param apply logical; not used in prototype (advisory only)
+#' @param interactive logical; print plans and findings
+#' @param streamThoughts logical; placeholder
+#' @return list of results by task
+lintStudyDesign <- function(
+  studyProtocol,
+  studyPackage = ".",
+  lintTasks = c("concept-sets-review","cohort-critique-general-design"),
+  apply = FALSE,
+  interactive = TRUE,
+  streamThoughts = TRUE
+) {
+  conceptSetRef <- file.path(studyPackage, "concept_set.json")
+  cohortRef     <- file.path(studyPackage, "cohort_definition.json")
+
+  results <- list()
+  use_acp <- !is.null(acp_state$url)
+
+  if ("concept-sets-review" %in% lintTasks) {
+    res <- if (use_acp) {
+      .acp_post("/tools/propose_concept_set_diff", list(
+        conceptSetRef = conceptSetRef,
+        studyIntent   = paste(readLines(studyProtocol, warn = FALSE), collapse=" ")
+      ))
+    } else {
+      local_concept_sets_review(conceptSetRef, studyIntent = paste(readLines(studyProtocol, warn = FALSE), collapse=" "))
+    }
+    if (interactive) {
+      cat("\n== Concept Sets Review ==\n"); cat(res$plan, "\n"); print_findings(res$findings)
+    }
+    results$`concept-sets-review` <- res
+  }
+
+  if ("cohort-critique-general-design" %in% lintTasks) {
+    res <- if (use_acp) {
+      .acp_post("/tools/cohort_lint", list(cohortRef = cohortRef))
+    } else {
+      local_cohort_critique_general(cohortRef)
+    }
+    if (interactive) {
+      cat("\n== Cohort Critique: General Design ==\n"); cat(res$plan, "\n"); print_findings(res$findings)
+    }
+    results$`cohort-critique-general-design` <- res
+  }
+
+  outdir <- file.path(studyPackage, "inst", "assistant")
+  if (!dir.exists(outdir)) dir.create(outdir, recursive = TRUE)
+  ts <- format(Sys.time(), "%Y%m%dT%H%M%S")
+  jsonlite::write_json(results, file.path(outdir, paste0("advice_", ts, ".json")), auto_unbox = TRUE, pretty = TRUE)
+
+  invisible(results)
+}
+
+--
+demo/concept_set.json
+
+{
+  "items": [
+    { "concept": { "conceptId": 111, "domainId": "Condition" } },
+    { "concept": { "conceptId": 222, "domainId": "Drug" } },
+    { "concept": { "conceptId": 111, "domainId": "Condition" } }
+  ]
+}
+
+
+--
+demo/cohort_definition.json
+
+{
+  "PrimaryCriteria": {
+    "ObservationWindow": { "PriorDays": 0, "PostDays": 0 }
+  },
+  "InclusionRules": [
+    { "name": "ok" },
+    { "name": "bad_window", "window": { "start": 10, "end": 5 } }
+  ]
+}
+
+
+--
+demo/protocol.md
+
+Study intent: Evaluate safety outcomes for exposure X in adults with condition Y.
+Key risks: prevalent-user bias; improper time-at-risk; limited overlap.
+
+--
+scripts/start_acp.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export FLASK_ENV=production
+export ACP_PORT=${ACP_PORT:-7777}
+python3 -m pip install --quiet flask requests
+python3 acp/server.py
+
+--
+scripts/start_gemini_acp_example.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+if ! command -v gemini >/dev/null 2>&1; then
+  echo "Gemini CLI not found. Install & auth it first."
+  exit 1
+fi
+export GEMINI_ACP_ENABLED=1
+export GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash-exp}
+echo "Gemini ACP enabled with model $GEMINI_MODEL"
+
+
+--
+scripts/r_demo_commands.R
+
+# Run after starting the ACP bridge:
+# source("scripts/r_demo_commands.R")
+
+devtools::load_all("R/OHDSIAssistant")  # or build & install
+OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
+res <- OHDSIAssistant::lintStudyDesign(
+  studyProtocol = "demo/protocol.md",
+  studyPackage  = "demo",
+  lintTasks     = c("concept-sets-review","cohort-critique-general-design"),
+  apply         = FALSE,
+  interactive   = TRUE
+)
+str(res, max.level = 2)
+
+
+--
+.gitignore
+
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.Rbuildignore
+.Rproj
+.DS_Store
+**/inst/assistant/*.json
+__pycache__/
+
+
+--
+README.md
+
+# OHDSI Assistant Prototype
+
+This repo contains:
+- A tiny **ACP-like bridge** (`acp/server.py`) exposing:
+  - `/tools/propose_concept_set_diff` (concept-sets-review)
+  - `/tools/cohort_lint` (cohort-critique-general-design)
+- An **R package** `OHDSIAssistant` with `lintStudyDesign()` that calls the bridge (or uses a local fallback).
+- A **demo** study in `demo/`.
+
+## Quick start
+
+1) Start bridge:
+
+```bash
+./scripts/start_acp.sh
+
+
+--
+(Optional) Enable Gemini CLI:
+
+./scripts/start_gemini_acp_example.sh  # sets env vars
+./scripts/start_acp.sh
+
+
+--
+In R:
+
+devtools::load_all("R/OHDSIAssistant")
+OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
+OHDSIAssistant::lintStudyDesign(
+  studyProtocol = "demo/protocol.md",
+  studyPackage  = "demo",
+  lintTasks     = c("concept-sets-review","cohort-critique-general-design"),
+  apply         = FALSE,
+  interactive   = TRUE
+)
+
+
+You’ll see plans, findings, and suggested patches. Advice logs are saved under demo/inst/assistant/.
+
+Next steps
+
+Replace “note” patches with executable JSON Patch aligned to ATLAS schema.
+
+Add WebAPI resolvers for webapi://cohort/<id> and webapi://conceptSet/<id>.
+
+Pull in Achilles/DQD summaries to drive severity and evidence links.

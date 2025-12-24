@@ -80,6 +80,8 @@ rec <- OHDSIAssistant::suggestPhenotypes("demo/protocol.md", "demo/Cohorts.csv",
 ids <- OHDSIAssistant::selectPhenotypeRecommendations(rec$phenotype_recommendations, interactive = TRUE)
 paths <- OHDSIAssistant::pullPhenotypeDefinitions(ids, outputDir = "demo")
 OHDSIAssistant::reviewPhenotypes("demo/protocol.md", paths)
+# Optionally persist improvement notes next to the cohort JSONs
+OHDSIAssistant::reviewPhenotypes("demo/protocol.md", paths, apply = TRUE, select = "all")
 ```
 
 LLM actions (preview/apply model-proposed edits):

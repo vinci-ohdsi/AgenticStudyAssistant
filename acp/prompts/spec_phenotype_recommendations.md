@@ -11,6 +11,13 @@ Output contract:
     }
   ]
 }
+
+### HEURISTICS/RULES
+
+For `phenotype_recommendations`
+- Select for the user only those phenotypes that make clinical sense when considering the user's stated study intent or what can be validly inferred from the intent statement. If none of the descriptions for the phenotypes logically aligns as an outcome or potential relevant covariate then do not return anything. 
+
+
 Constraints:
 - Choose up to maxResults provided in the request.
 - Use ONLY cohortIds from the allowed list provided.
