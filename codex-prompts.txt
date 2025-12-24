@@ -1,7 +1,13 @@
+Made a significant number of changes to the test-llm-actions.R script to just try and merge together the use cases around linting and phenotype recommen
+dation. Also, and importantly, the spec_* markdown files for cohort critique, concept sets review, phenotype improvements, and phenotype recommendations
+ have been edited to bring in the heuristics, which actually seems to improve the results quite a bit. However,  I would like to add to test-llm-actions.R a demo of `cohort-critique-general-design` using the LLM but I don't think we have one currently. If we don't generate the code so that I can test and demo this prototype feature.  
+
 
 --
 
-There's been a lot of changes in the code since we were working on `concept-sets-review`, `cohort-critique-general-design`. I want you to go back to the endpoints that help to review and fix concept definitions and just double check that the prompts being sent to the LLM are functioning. An example is something out of a line. The request to the LLM from the ACP says first 20 items when it's only sending a single concept set definition. Here is a log of the transaction where I noticed the issue (also, it no longer is working):
+There's been a lot of changes in the code since we were working on `concept-sets-review`.agent-shell/
+	sandbox/
+	scripts/output-cohort-diagn/, `cohort-critique-general-design`. I want you to go back to the endpoints that help to review and fix concept definitions and just double check that the prompts being sent to the LLM are functioning. An example is something out of a line. The request to the LLM from the ACP says first 20 items when it's only sending a single concept set definition. Here is a log of the transaction where I noticed the issue (also, it no longer is working):
 
 
 "

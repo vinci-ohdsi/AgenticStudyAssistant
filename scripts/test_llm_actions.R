@@ -15,6 +15,7 @@ devtools::load_all("AgenticStudyAssistant/R/OHDSIAssistant")
 # confirm the ACP server/bridge is running
 OHDSIAssistant::acp_connect("http://127.0.0.1:7777")
 
+############################################################
 ## Test: -- `concept-sets-review`
 # this concept set has no descendant concepts specified
 concept_set_ref <- "demo/concept_set.json"  # This path is relative to the ACP server's base folder
@@ -40,14 +41,107 @@ cat("LLM applied written_to:\n"); print(applied$written_to)
 
 ############################################################
 
+## -- `cohort-critique-general-design` (LLM-backed cohort lint demo)
+cohort_ref <- "AgenticStudyAssistant/demo/cohort_definition.json"
+cohort_body <- list(cohortRef = cohort_ref)
+cohort_resp <- OHDSIAssistant:::`.acp_post`("/tools/cohort_lint", cohort_body)
+cat("\n== Cohort Critique (general design) ==\n")
+cat(cohort_resp$plan, "\n")
+if (length(cohort_resp$findings)) {
+  print(cohort_resp$findings)
+} else {
+  cat("No findings returned.\n")
+}
+### Output from a prior run
+## == Cohort Critique (general design) ==
+## > Review cohort JSON for general design issues (washout/time-at-risk, inverted windows, empty or conflicting criteria). 
+## > . + > [[1]]
+## [[1]]$evidence
+## [[1]]$evidence[[1]]
+## [[1]]$evidence[[1]]$note
+## [1] "The current `PriorDays` is not specified, potentially leading to inclusion of patients with recent, irrelevant exposures."
+
+## [[1]]$evidence[[1]]$ref
+## [1] "/PrimaryCriteria/ObservationWindow.PriorDays"
+
+## [[1]]$id
+## [1] "missing_washout"
+
+## [[1]]$impact
+## [1] "validity"
+
+## [[1]]$message
+## [1] "Consider adding a washout period to the `ObservationWindow` to account for prior exposure. A typical washout period is 365 days."
+
+## [[1]]$severity
+## [1] "medium"
+
+## [[2]]
+## [[2]]$evidence
+## [[2]]$evidence[[1]]
+## [[2]]$evidence[[1]]$note
+## [1] "Lack of an explicitly stated time-at-risk might lead to inconsistent interpretation and application of the cohort criteria."
+
+## [[2]]$evidence[[1]]$ref
+## [1] "/PrimaryCriteria"
+
+## [[2]]$id
+## [1] "unclear_time_at_risk"
+
+## [[2]]$impact
+## [1] "validity"
+
+## [[2]]$message
+## [1] "The definition of 'time at risk' is not explicit. Consider explicitly defining this within the cohort criteria to ensure clarity and consistency in patient selection."
+
+## [[2]]$severity
+## [1] "low"
+
+
+if (length(cohort_resp$patches)) {
+  cat("Suggested patches:\n"); print(cohort_resp$patches)
+}
+## Suggested patches:
+## [[1]]
+## [[1]]$artifact
+## [1] "cohort_definition.json"
+
+## [[1]]$ops
+## [[1]]$ops[[1]]
+## [[1]]$ops[[1]]$op
+## [1] "note"
+
+## [[1]]$ops[[1]]$path
+## [1] "/PrimaryCriteria/ObservationWindow.PriorDays"
+
+## [[1]]$ops[[1]]$value
+## [[1]]$ops[[1]]$value$details
+## [1] "To account for prior exposure, add a `PriorDays` value to the `ObservationWindow`. A typical washout period is 365 days. This can help ensure that only patients with a relevant history are included."
+
+## [[1]]$ops[[1]]$value$summary
+## [1] "Add a washout period"
+
+## [[1]]$type
+## [1] "jsonpatch"
+
+
+if (length(cohort_resp$actions)) {
+  cat("Actions (if any):\n"); print(cohort_resp$actions)
+}
+## None at this time
+
+############################################################
+
 ## -- `phenotype_recommendations`
 protocol <- "AgenticStudyAssistant/demo/protocol.md"
 catalog  <- "AgenticStudyAssistant/demo/Cohorts.csv"
 study_dir <- "AgenticStudyAssistant/demo"
 
 rec <- OHDSIAssistant::suggestPhenotypes(protocol, catalog, maxResults = 10, interactive = TRUE)
-
 ids <- OHDSIAssistant::selectPhenotypeRecommendations(rec$phenotype_recommendations, select = NULL, interactive = interactive())
+# this will write the JSON for the selected cohort definitions to a folder
+
+## -- `phenotype_improvements` - depends on ids having been chosen above
 if (length(ids)) {
   paths <- OHDSIAssistant::pullPhenotypeDefinitions(ids, outputDir = study_dir, overwrite = FALSE)
   OHDSIAssistant::reviewPhenotypes(protocol, paths, interactive = TRUE)
@@ -57,4 +151,3 @@ if (length(ids)) {
   cat("No phenotype recommendations returned (likely stub mode).\n")
 }
 
-## -- `phenotype_improvements`
