@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import shlex
@@ -445,6 +446,16 @@ def apply_set_include_descendants(cs, where, value=True):
     return cs, preview
 
 
+def _sha256_json(obj) -> str:
+    try:
+        payload = json.dumps(obj, sort_keys=True)
+    except Exception:
+        payload = str(obj)
+    h = hashlib.sha256()
+    h.update(payload.encode("utf-8"))
+    return h.hexdigest()
+
+
 @app.post("/actions/execute_llm")
 def execute_llm_actions():
     """
@@ -830,6 +841,125 @@ Characterization previews (limited to {CHAR_PREVIEW_MAX_FILES} files, {CHAR_PREV
             "artifact": {"protocolRef": protocol_ref, "cohortRefs": cohort_refs, "characterizationRefs": characterization_refs},
         }
     )
+
+
+@app.post("/assist/analyze")
+def assist_analyze():
+    """Bridge for WebAPI: concept-sets-review -> prepared mutations (dry-run only)."""
+    body = request.get_json(force=True) or {}
+    caller = body.get("caller")
+    task = body.get("task") or body.get("Tool") or ""
+    artifact = body.get("artifact") or {}
+    study_intent = body.get("study_intent") or body.get("studyIntent") or ""
+
+    if task != "concept-sets-review":
+        return jsonify({"error": "Only concept-sets-review is supported in this prototype"}), 400
+
+    if not isinstance(artifact, dict) or artifact.get("type") not in ("conceptSet", "concept_set"):
+        return jsonify({"error": "artifact.type=conceptSet with expression is required"}), 400
+
+    expression = artifact.get("expression")
+    concept_set_id = artifact.get("id")
+    concept_set_name = artifact.get("name") or f"Concept Set {concept_set_id}"
+    if not expression:
+        return jsonify({"error": "artifact.expression is required"}), 400
+
+    items, _src = canonicalize_concept_items(expression)
+    findings, patches, actions, risk_notes = [], [], [], []
+    plan = f"Review concept set for includeDescendants gaps (study intent: {study_intent[:120]}...)"
+
+    total_items = len(items)
+    preview_n = min(20, total_items)
+    user_prompt = f"""Tool: concept-sets-review
+Study intent: {study_intent}
+Concept set size: {total_items}
+Preview (first {preview_n} items): {json.dumps(items[:preview_n])}"""
+    llm = maybe_call_model(build_llm_prompt("concept-sets-review", user_prompt))
+
+    concept_ids = [x.get("conceptId") for x in items if x.get("conceptId") is not None]
+    duplicates = [cid for cid in concept_ids if concept_ids.count(cid) > 1]
+    if total_items == 0:
+        findings.append({"id": "empty_concept_set", "severity": "high", "impact": "design", "message": "Concept set is empty."})
+    if duplicates:
+        findings.append({"id": "duplicate_concepts", "severity": "medium", "impact": "design", "message": f"Duplicate conceptIds: {sorted(set(duplicates))}"})
+
+    no_desc = [
+        it
+        for it in items
+        if (it.get("domainId") or "").lower() == "drug"
+        and (it.get("conceptClassId") or "").lower() == "ingredient"
+        and not bool(it.get("includeDescendants") or False)
+    ]
+    if no_desc:
+        findings.append(
+            {
+                "id": "suggest_descendants_concept_set",
+                "severity": "medium",
+                "impact": "design",
+                "message": "Drug ingredient concepts missing includeDescendants; consider enabling for coverage.",
+            }
+        )
+        actions.append(
+            {
+                "type": "set_include_descendants",
+                "where": {"domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": False},
+                "value": True,
+            }
+        )
+
+    if llm:
+        for f in llm.get("findings", []):
+            if f not in findings:
+                findings.append(f)
+        for p in llm.get("patches", []):
+            if p not in patches:
+                patches.append(p)
+        if isinstance(llm.get("actions"), list):
+            actions = llm["actions"]
+        if llm.get("plan"):
+            plan = llm["plan"]
+
+    preimage_checksum = None
+    preimage_obj = body.get("preimage") or {}
+    if isinstance(preimage_obj, dict):
+        preimage_checksum = preimage_obj.get("checksum")
+    if not preimage_checksum:
+        preimage_checksum = _sha256_json(expression)
+
+    prepared_mutations = []
+    if caller == "WebAPI":
+        cs_copy = json.loads(json.dumps(expression))
+        cs_copy, preview_changes = apply_set_include_descendants(
+            cs_copy, {"domainId": "Drug", "conceptClassId": "Ingredient", "includeDescendants": False}, value=True
+        )
+        label = "Fork concept set with includeDescendants for Drug/Ingredient"
+        new_name = f"{concept_set_name} - assistant v1"
+        prepared_mutations.append(
+            {
+                "label": label,
+                "preimage": {"conceptSetId": concept_set_id, "checksum": preimage_checksum},
+                "requests": [
+                    {"method": "POST", "url_template": "/WebAPI/conceptset", "body": {"name": new_name, "description": f"Assistant fork of {concept_set_name}"}},
+                    {"method": "POST", "url_template": "/WebAPI/conceptset/{newConceptSetId}/expression", "body": cs_copy},
+                ],
+                "preview_changes": preview_changes,
+                "apply_policy": "fork",
+            }
+        )
+
+    resp = {
+        "plan": plan,
+        "findings": findings,
+        "patches": patches,
+        "actions": actions,
+        "risk_notes": risk_notes,
+        "prepared_mutations": prepared_mutations,
+        "artifact": {"conceptSetId": concept_set_id, "name": concept_set_name},
+        "preimage": {"conceptSetId": concept_set_id, "checksum": preimage_checksum},
+        "mode": "assist",
+    }
+    log_lines("ASSIST OUT > ", json.dumps(resp)[:4000])
+    return jsonify(resp)
 
 
 if __name__ == "__main__":

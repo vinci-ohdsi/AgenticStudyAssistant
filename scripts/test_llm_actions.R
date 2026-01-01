@@ -26,7 +26,8 @@ resp <- OHDSIAssistant:::`.acp_post`("/tools/propose_concept_set_diff", list(
   studyIntent   = paste(readLines("./AgenticStudyAssistant/demo/protocol.md", warn = FALSE), collapse = " ") # this path is relative the start of the R session
 ))
 actions <- resp$actions
-cat("LLM actions:\n"); print(actions)
+cat("LLM actions:\n");
+print(actions)
 
 # Preview execution of actions
 prev <- OHDSIAssistant::applyLLMActionsConceptSet(concept_set_ref, actions, preview = TRUE)
