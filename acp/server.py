@@ -348,7 +348,7 @@ def _chat_openwebui(prompt: str):
     payload = {"model": llm_model, "messages": [{"role": "user", "content": prompt}]}
     log_lines("OPENWEBUI OUTGOING TEXT > ", prompt)
     try:
-        resp = requests.post(api_url, headers=headers, json=payload, timeout=60)
+        resp = requests.post(api_url, headers=headers, json=payload, timeout=180)
     except Exception as e:  # pragma: no cover
         print(f"[openwebui-error] request failed: {e}", file=sys.stderr)
         return None
